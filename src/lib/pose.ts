@@ -8,6 +8,9 @@ const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'
 
 let landmarkerPromise: Promise<PoseLandmarker> | null = null
+// MediaPipe VIDEO mode requires timestamps to increase monotonically across
+// the landmarker's whole lifetime, so this offset persists across analyses.
+let lastVideoTs = -1
 
 export function loadLandmarker(): Promise<PoseLandmarker> {
   if (!landmarkerPromise) {
@@ -85,13 +88,12 @@ export async function extractPoseSequence(
     const frameCount = Math.min(MAX_FRAMES, Math.max(24, Math.floor(duration * TARGET_FPS)))
     const dt = duration / frameCount
     const frames: PoseFrame[] = []
-    let lastVideoTs = -1
+    const tsBase = lastVideoTs + 1
 
     for (let i = 0; i < frameCount; i++) {
       const t = Math.min(i * dt, duration - 0.001)
       await seekTo(video, t)
-      // MediaPipe VIDEO mode requires strictly increasing timestamps
-      let ts = Math.round(t * 1000)
+      let ts = tsBase + Math.round(t * 1000)
       if (ts <= lastVideoTs) ts = lastVideoTs + 1
       lastVideoTs = ts
       const result = landmarker.detectForVideo(video, ts)

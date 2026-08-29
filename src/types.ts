@@ -39,6 +39,8 @@ export interface MetricResult {
   keyTime: number
   /** raw values for the coach payload */
   values: Record<string, number>
+  /** true when the clip didn't let us measure this signal with confidence */
+  unreliable?: boolean
 }
 
 export interface Analysis {

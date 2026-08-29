@@ -35,12 +35,13 @@ export default function App() {
       const coach = await getCoachAdvice(analysis).catch(() => templatedAdvice(analysis))
       setScreen({ name: 'results', analysis, videoUrl, coach, isSample: false })
     } catch (e) {
+      const raw = e instanceof Error ? e.message : ''
+      const technical = !raw || /INVALID_ARGUMENT|CalculatorGraph|MediaPipe|wasm/i.test(raw)
       setScreen({
         name: 'landing',
-        error:
-          e instanceof Error
-            ? e.message
-            : 'Something went wrong analysing that clip. Please try another video.',
+        error: technical
+          ? 'Something went wrong analysing that clip. Please try again or use another video.'
+          : raw,
       })
     }
   }, [])

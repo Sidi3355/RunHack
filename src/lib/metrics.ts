@@ -59,6 +59,17 @@ export function analyseSequence(seq: PoseSequence): Analysis {
   const H = HEURISTICS
 
   // ---- 1. Torso lean (posture)
+  // torso measurements need visible shoulders AND hips; tight-cropped clips
+  // (legs only) otherwise produce nonsense lean angles
+  const torsoVis = mean(
+    frames.map((f) =>
+      mean(
+        [LM.leftShoulder, LM.rightShoulder, LM.leftHip, LM.rightHip].map(
+          (i) => f.landmarks[i].visibility,
+        ),
+      ),
+    ),
+  )
   const leans = frames.map(torsoLeanDeg)
   const avgLean = mean(leans)
   const [lo, hi] = quantiles(leans, [0.05, 0.95])
@@ -75,7 +86,20 @@ export function analyseSequence(seq: PoseSequence): Analysis {
       0.35 * falloffScore(rangeDev, H.torsoLean.rangeFalloff),
   )
   const maxLeanFrame = frames[leans.indexOf(Math.max(...leans))]
-  const posture: MetricResult = {
+  const postureUnreliable = torsoVis < 0.6 || avgLean > 45
+  const posture: MetricResult = postureUnreliable
+    ? {
+        key: 'posture',
+        label: 'Posture',
+        score: 65,
+        headline:
+          "We couldn't reliably measure your torso in this clip — try filming with your whole body in frame.",
+        detail: 'Posture needs shoulders and hips clearly visible from the side.',
+        keyTime: frames[0].t,
+        values: { torso_lean_deg: -1, torso_lean_range_deg: -1 },
+        unreliable: true,
+      }
+    : {
     key: 'posture',
     label: 'Posture',
     score: postureScore,
@@ -184,7 +208,9 @@ export function analyseSequence(seq: PoseSequence): Analysis {
       kneeMotion.score * w.kneeMotion +
       symmetry.score * w.symmetry,
   )
-  const primary = metrics.reduce((a, b) => (b.score < a.score ? b : a))
+  const reliable = metrics.filter((m) => !m.unreliable)
+  const pool = reliable.length ? reliable : metrics
+  const primary = pool.reduce((a, b) => (b.score < a.score ? b : a))
 
   return { sequence: seq, metrics, overallScore, confidence: seq.confidence, primary }
 }
