@@ -294,12 +294,18 @@ export function analyseSequence(seq: PoseSequence): Analysis {
   // ---- 6. Vertical oscillation (bounce)
   // Large CoM vertical displacement ("bounding") is a video-analysis flag
   // (Souza 2016) and predicts higher peak vGRF (Adams 2018).
-  // hip height normalized by per-frame leg length, then detrended with a
-  // rolling mean so whole-body drift toward/away from the camera cancels out
-  const hipYs = frames.map((f, i) =>
-    perFrameLeg[i] > 1e-4 ? mid(f, LM.leftHip, LM.rightHip).y / perFrameLeg[i] : 0,
-  )
-  const winSec = 0.5
+  // raw hip height detrended with a rolling mean (cancels whole-body drift),
+  // then normalized by the extended-leg length. Per-frame normalization would
+  // inject knee-flexion foreshortening into the signal, so we avoid it.
+  const hipYs = frames.map((f) => mid(f, LM.leftHip, LM.rightHip).y)
+  // detrend window ≈ one stride period so within-stride motion survives while
+  // slower whole-body drift cancels (fixed windows break on slow-motion clips)
+  const contactGaps: number[] = []
+  for (const contacts of [lContacts, rContacts])
+    for (let i = 1; i < contacts.length; i++) contactGaps.push(contacts[i].t - contacts[i - 1].t)
+  const winSec = contactGaps.length
+    ? [...contactGaps].sort((a, b) => a - b)[Math.floor(contactGaps.length / 2)]
+    : 0.7
   const detrended = hipYs.map((y, i) => {
     const lo = frames[i].t - winSec / 2
     const hi = frames[i].t + winSec / 2
@@ -307,10 +313,12 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     return y - mean(windowVals)
   })
   const [oscLo, oscHi] = quantiles(detrended, [0.05, 0.95])
-  const oscRatio = oscHi - oscLo
+  const [legRef] = quantiles(perFrameLeg, [0.9]) // near-extended leg length
+  const oscRatio = legRef > 1e-4 ? (oscHi - oscLo) / legRef : 0
   const oscDev = Math.max(0, oscRatio - H.verticalOscillation.ok)
   const hiIdx = detrended.indexOf(Math.max(...detrended))
-  const verticalOscillation: MetricResult = sideView
+  const oscUnreliable = !sideView || oscRatio > 0.25
+  const verticalOscillation: MetricResult = !oscUnreliable
     ? {
         key: 'verticalOscillation',
         label: 'Bounce',
@@ -327,8 +335,12 @@ export function analyseSequence(seq: PoseSequence): Analysis {
         key: 'verticalOscillation',
         label: 'Bounce',
         score: 65,
-        headline: "We couldn't reliably measure your vertical bounce from this camera angle.",
-        detail: notSideOn,
+        headline: sideView
+          ? "We couldn't reliably measure your vertical bounce in this clip."
+          : "We couldn't reliably measure your vertical bounce from this camera angle.",
+        detail: sideView
+          ? 'The hip movement we tracked was too large to be a trustworthy bounce estimate — a steadier side-on clip helps.'
+          : notSideOn,
         keyTime: frames[0].t,
         values: { vertical_oscillation_leg_ratio: -1 },
         unreliable: true,
