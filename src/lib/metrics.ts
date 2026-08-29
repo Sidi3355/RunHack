@@ -225,6 +225,53 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     evidence: EVIDENCE.kneeMotion,
   }
 
+  // ---- side-view check: foot placement/cadence/bounce/landing-knee are only
+  // meaningful on a side-on clip. Head-on footage shows almost no horizontal
+  // ankle swing relative to the hip, so we gate on that.
+  const perFrameLeg = frames.map((f) => legLength(f, LM.leftHip, LM.leftKnee, LM.leftAnkle))
+  const ankleSwing = (ankle: number, hip: number) => {
+    const xs = frames.map((f, i) =>
+      perFrameLeg[i] > 1e-4 ? (f.landmarks[ankle].x - f.landmarks[hip].x) / perFrameLeg[i] : 0,
+    )
+    const [a, b] = quantiles(xs, [0.05, 0.95])
+    return b - a
+  }
+  const sideSwing = Math.max(
+    ankleSwing(LM.leftAnkle, LM.leftHip),
+    ankleSwing(LM.rightAnkle, LM.rightHip),
+  )
+  // second orientation signal: from the side the shoulders nearly overlap
+  // horizontally, head-on they are widely separated relative to torso length
+  const shoulderRatio = mean(
+    frames.map((f) => {
+      const s = mid(f, LM.leftShoulder, LM.rightShoulder)
+      const h = mid(f, LM.leftHip, LM.rightHip)
+      const torso = Math.hypot(s.x - h.x, s.y - h.y)
+      return torso > 1e-4
+        ? Math.abs(f.landmarks[LM.leftShoulder].x - f.landmarks[LM.rightShoulder].x) / torso
+        : 0
+    }),
+  )
+  // third signal: left–right ankle horizontal separation oscillates with each
+  // stride when seen from the side, and is also the cadence signal below
+  const sepRaw = median3(
+    frames.map((f, i) =>
+      perFrameLeg[i] > 1e-4
+        ? (f.landmarks[LM.leftAnkle].x - f.landmarks[LM.rightAnkle].x) / perFrameLeg[i]
+        : 0,
+    ),
+  )
+  // centre the signal so a constant lateral offset can't stop it crossing zero
+  const [sepMed] = quantiles(sepRaw, [0.5])
+  const sepSig = sepRaw.map((v) => v - sepMed)
+  const [sepLo, sepHi] = quantiles(sepSig, [0.05, 0.95])
+  const sepAmp = sepHi - sepLo
+  const facingCamera = torsoVis >= 0.6 && shoulderRatio > H.sideView.maxShoulderRatio
+  const sideView =
+    Math.max(sideSwing, sepAmp / 2) >= H.sideView.minAnkleSwing && !facingCamera
+  const notSideOn =
+    'This signal needs a side-on clip — try filming from the side with the whole body in frame.'
+
   // ---- 3. Foot placement / possible overstride signal
   // The expert 2D cue is landing "under a flexing knee": at initial contact the
   // ankle should sit roughly beneath the knee (shin near vertical). Measuring
@@ -267,7 +314,20 @@ export function analyseSequence(seq: PoseSequence): Analysis {
   const worstContact = contactSignals.length
     ? contactSignals.reduce((a, b) => (b.v > a.v ? b : a))
     : { v: 0, t: frames[0].t }
-  const footPlacement: MetricResult = {
+  // facing the camera, horizontal image displacement is lateral alignment,
+  // not forward placement, so the overstride axis is invalid
+  const footPlacement: MetricResult = facingCamera
+    ? {
+        key: 'footPlacement',
+        label: 'Foot placement',
+        score: 65,
+        headline: "We couldn't judge your foot placement from this camera angle.",
+        detail: notSideOn,
+        keyTime: frames[0].t,
+        values: { foot_ahead_of_knee_leg_ratio: -1 },
+        unreliable: true,
+      }
+    : {
     key: 'footPlacement',
     label: 'Foot placement',
     score: footScore,
@@ -314,53 +374,6 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     evidence: EVIDENCE.symmetry,
   }
 
-  // ---- side-view check: cadence/bounce/landing-knee are only meaningful on
-  // a side-on clip. Head-on footage shows almost no horizontal ankle swing
-  // relative to the hip, so we gate on that.
-  const perFrameLeg = frames.map((f) => legLength(f, LM.leftHip, LM.leftKnee, LM.leftAnkle))
-  const ankleSwing = (ankle: number, hip: number) => {
-    const xs = frames.map((f, i) =>
-      perFrameLeg[i] > 1e-4 ? (f.landmarks[ankle].x - f.landmarks[hip].x) / perFrameLeg[i] : 0,
-    )
-    const [a, b] = quantiles(xs, [0.05, 0.95])
-    return b - a
-  }
-  const sideSwing = Math.max(
-    ankleSwing(LM.leftAnkle, LM.leftHip),
-    ankleSwing(LM.rightAnkle, LM.rightHip),
-  )
-  // second orientation signal: from the side the shoulders nearly overlap
-  // horizontally, head-on they are widely separated relative to torso length
-  const shoulderRatio = mean(
-    frames.map((f) => {
-      const s = mid(f, LM.leftShoulder, LM.rightShoulder)
-      const h = mid(f, LM.leftHip, LM.rightHip)
-      const torso = Math.hypot(s.x - h.x, s.y - h.y)
-      return torso > 1e-4
-        ? Math.abs(f.landmarks[LM.leftShoulder].x - f.landmarks[LM.rightShoulder].x) / torso
-        : 0
-    }),
-  )
-  // third signal: left–right ankle horizontal separation oscillates with each
-  // stride when seen from the side, and is also the cadence signal below
-  const sepRaw = median3(
-    frames.map((f, i) =>
-      perFrameLeg[i] > 1e-4
-        ? (f.landmarks[LM.leftAnkle].x - f.landmarks[LM.rightAnkle].x) / perFrameLeg[i]
-        : 0,
-    ),
-  )
-  // centre the signal so a constant lateral offset can't stop it crossing zero
-  const [sepMed] = quantiles(sepRaw, [0.5])
-  const sepSig = sepRaw.map((v) => v - sepMed)
-  const [sepLo, sepHi] = quantiles(sepSig, [0.05, 0.95])
-  const sepAmp = sepHi - sepLo
-  const facingCamera = torsoVis >= 0.6 && shoulderRatio > H.sideView.maxShoulderRatio
-  const sideView =
-    Math.max(sideSwing, sepAmp / 2) >= H.sideView.minAnkleSwing && !facingCamera
-  const notSideOn =
-    'This signal needs a side-on clip — try filming from the side with the whole body in frame.'
-
   // ---- 5. Cadence (step rate)
   // Higher step rate reduces loading rate / braking impulse (Schubert 2014, Adams 2018).
   // The left–right ankle separation oscillates once per STRIDE, so the stride
@@ -396,8 +409,13 @@ export function analyseSequence(seq: PoseSequence): Analysis {
   const stridePeriod = bestLag * dt
   const stepsPerMin = stridePeriod > 0 ? 120 / stridePeriod : 0
   // needs a clear periodic gait signal, a side-on view and 2+ strides of footage
+  // a running rhythm below ~100 steps/min almost always means slow-motion
+  // footage, so a true steps-per-minute reading can't be established from it
   const cadenceUnreliable =
-    !sideView || bestCorr < 0.35 || span < 2 * stridePeriod || stepsPerMin === 0
+    !sideView ||
+    bestCorr < 0.35 ||
+    span < 2 * stridePeriod ||
+    stepsPerMin < 100
   const cadenceDev =
     stepsPerMin < H.cadence.idealMin
       ? H.cadence.idealMin - stepsPerMin
@@ -445,8 +463,9 @@ export function analyseSequence(seq: PoseSequence): Analysis {
   // detrend window ≈ one stride period (two steps) so within-stride motion
   // survives while slower whole-body drift cancels — a window shorter than the
   // hip's oscillation period would subtract the very signal being measured
-  const winSec =
-    stepsPerMin > 60 ? Math.min(1.5, Math.max(0.4, 120 / stepsPerMin)) : 0.7
+  const winSec = !cadenceUnreliable
+    ? Math.min(1.5, Math.max(0.4, 120 / stepsPerMin))
+    : 0.7
   const detrended = hipYs.map((y, i) => {
     const lo = frames[i].t - winSec / 2
     const hi = frames[i].t + winSec / 2
