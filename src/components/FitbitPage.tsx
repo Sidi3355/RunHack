@@ -10,7 +10,7 @@ import {
   setClientId,
   type FitbitInsights,
 } from '../lib/fitbit'
-import Chart from './Chart'
+import { ExpandableChart } from './Chart'
 
 function fmtPace(minPerKm: number) {
   const m = Math.floor(minPerKm)
@@ -59,6 +59,9 @@ export default function FitbitPage() {
   }
 
   const chrono = insights ? [...insights.runs].reverse() : []
+  const runDate = (iso: string) =>
+    new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const hrRuns = chrono.filter((r) => (r.averageHeartRate ?? 0) > 0)
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -213,22 +216,39 @@ export default function FitbitPage() {
                   <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-moss/50">
                     Pace trend (min/km — lower is faster)
                   </p>
-                  <Chart points={chrono.map((r) => r.paceMinPerKm)} color="#3f6b4f" />
+                  <ExpandableChart
+                    title="Pace trend"
+                    subtitle="min/km per run — lower is faster"
+                    points={chrono.map((r) => r.paceMinPerKm)}
+                    labels={chrono.map((r) => runDate(r.startTime))}
+                    color="#3f6b4f"
+                  />
                 </div>
                 <div className="rounded-3xl border border-line bg-panel p-5">
                   <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-moss/50">
                     Heart rate trend (bpm)
                   </p>
-                  <Chart
-                    points={chrono.map((r) => r.averageHeartRate ?? 0).filter((h) => h > 0)}
+                  <ExpandableChart
+                    title="Heart rate trend"
+                    subtitle="Average bpm per run"
+                    points={hrRuns.map((r) => r.averageHeartRate as number)}
+                    labels={hrRuns.map((r) => runDate(r.startTime))}
                     color="#d98f5f"
+                    unit=" bpm"
                   />
                 </div>
                 <div className="rounded-3xl border border-line bg-panel p-5">
                   <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-moss/50">
                     Distance per run (km)
                   </p>
-                  <Chart points={chrono.map((r) => r.distanceKm)} color="#7ba05b" />
+                  <ExpandableChart
+                    title="Distance per run"
+                    subtitle="Kilometres per run"
+                    points={chrono.map((r) => r.distanceKm)}
+                    labels={chrono.map((r) => runDate(r.startTime))}
+                    color="#7ba05b"
+                    unit=" km"
+                  />
                 </div>
               </div>
 

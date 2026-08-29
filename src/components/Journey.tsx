@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { MetricKey } from '../types'
 import { deleteEntry, loadHistory, type HistoryEntry } from '../lib/history'
-import Chart from './Chart'
+import { ExpandableChart } from './Chart'
 
 const METRIC_LABELS: Record<MetricKey, string> = {
   posture: 'Posture',
@@ -26,10 +26,11 @@ export default function Journey() {
   const [entries, setEntries] = useState<HistoryEntry[]>(loadHistory())
   const chrono = [...entries].reverse()
 
-  const trend = (key: MetricKey) =>
-    chrono
-      .filter((e) => e.scores[key] != null && !e.unreliable.includes(key))
-      .map((e) => e.scores[key] as number)
+  const trendEntries = (key: MetricKey) =>
+    chrono.filter((e) => e.scores[key] != null && !e.unreliable.includes(key))
+
+  const shortDate = (ms: number) =>
+    new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -54,18 +55,35 @@ export default function Journey() {
               <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-moss/50">
                 Overall movement snapshot
               </p>
-              <Chart points={chrono.map((e) => e.overallScore)} min={0} max={100} color="#3f6b4f" />
+              <ExpandableChart
+                title="Overall movement snapshot"
+                subtitle="Score out of 100 across your saved analyses"
+                points={chrono.map((e) => e.overallScore)}
+                labels={chrono.map((e) => shortDate(e.date))}
+                min={0}
+                max={100}
+                color="#3f6b4f"
+              />
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               {(Object.keys(METRIC_LABELS) as MetricKey[]).map((key) => {
-                const pts = trend(key)
-                if (!pts.length) return null
+                const es = trendEntries(key)
+                if (!es.length) return null
                 return (
                   <div key={key} className="rounded-3xl border border-line bg-panel p-4">
                     <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-moss/50">
                       {METRIC_LABELS[key]}
                     </p>
-                    <Chart points={pts} min={0} max={100} height={90} color="#7ba05b" />
+                    <ExpandableChart
+                      title={METRIC_LABELS[key]}
+                      subtitle="Score out of 100 across your saved analyses (reliable readings only)"
+                      points={es.map((e) => e.scores[key] as number)}
+                      labels={es.map((e) => shortDate(e.date))}
+                      min={0}
+                      max={100}
+                      height={90}
+                      color="#7ba05b"
+                    />
                   </div>
                 )
               })}
