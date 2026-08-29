@@ -71,6 +71,14 @@ export const HEURISTICS = {
     okFlexion: 8,
     falloff: 10,
   },
+  sideView: {
+    /**
+     * Minimum horizontal ankle swing (5–95 pct range, normalized by leg
+     * length) for a clip to count as side-on. Head-on footage shows little
+     * horizontal ankle travel, making gait-event metrics unreliable.
+     */
+    minAnkleSwing: 0.45,
+  },
   overallWeights: {
     posture: 0.14,
     footPlacement: 0.2,

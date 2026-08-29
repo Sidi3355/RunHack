@@ -51,8 +51,17 @@ function lowFootFrames(frames: PoseFrame[], ankle: number): PoseFrame[] {
  * (y down → lowest foot), spaced at least `minGap` seconds apart.
  * Approximate gait-event detection from monocular video — not force-plate truth.
  */
-function contactFrames(frames: PoseFrame[], ankle: number, minGap = 0.22): PoseFrame[] {
-  const ys = frames.map((f) => f.landmarks[ankle].y)
+function contactFrames(frames: PoseFrame[], side: 'left' | 'right', minGap = 0.22): PoseFrame[] {
+  const [hip, knee, ankle] =
+    side === 'left'
+      ? [LM.leftHip, LM.leftKnee, LM.leftAnkle]
+      : [LM.rightHip, LM.rightKnee, LM.rightAnkle]
+  // ankle depth below the hip, normalized by per-frame leg length, so body
+  // translation / scale change (runner approaching camera) cancels out
+  const ys = frames.map((f) => {
+    const leg = legLength(f, hip, knee, ankle)
+    return leg > 1e-4 ? (f.landmarks[ankle].y - f.landmarks[hip].y) / leg : 0
+  })
   const [thresh] = quantiles(ys, [0.7])
   const out: PoseFrame[] = []
   let lastT = -Infinity
@@ -221,14 +230,33 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     values: { knee_range_lr_difference_pct: +(rangeDiff * 100).toFixed(0) },
   }
 
+  // ---- side-view check: cadence/bounce/landing-knee are only meaningful on
+  // a side-on clip. Head-on footage shows almost no horizontal ankle swing
+  // relative to the hip, so we gate on that.
+  const perFrameLeg = frames.map((f) => legLength(f, LM.leftHip, LM.leftKnee, LM.leftAnkle))
+  const ankleSwing = (ankle: number, hip: number) => {
+    const xs = frames.map((f, i) =>
+      perFrameLeg[i] > 1e-4 ? (f.landmarks[ankle].x - f.landmarks[hip].x) / perFrameLeg[i] : 0,
+    )
+    const [a, b] = quantiles(xs, [0.05, 0.95])
+    return b - a
+  }
+  const sideSwing = Math.max(
+    ankleSwing(LM.leftAnkle, LM.leftHip),
+    ankleSwing(LM.rightAnkle, LM.rightHip),
+  )
+  const sideView = sideSwing >= H.sideView.minAnkleSwing
+  const notSideOn =
+    'This signal needs a side-on clip — try filming from the side with the whole body in frame.'
+
   // ---- 5. Cadence (step rate)
   // Higher step rate reduces loading rate / braking impulse (Schubert 2014, Adams 2018).
-  const lContacts = contactFrames(frames, LM.leftAnkle)
-  const rContacts = contactFrames(frames, LM.rightAnkle)
+  const lContacts = contactFrames(frames, 'left')
+  const rContacts = contactFrames(frames, 'right')
   const totalContacts = lContacts.length + rContacts.length
   const span = frames[frames.length - 1].t - frames[0].t
   const stepsPerMin = span > 0.5 ? (totalContacts / span) * 60 : 0
-  const cadenceUnreliable = totalContacts < H.cadence.minContacts || span < 2
+  const cadenceUnreliable = !sideView || totalContacts < H.cadence.minContacts || span < 2
   const cadenceDev =
     stepsPerMin < H.cadence.idealMin
       ? H.cadence.idealMin - stepsPerMin
@@ -240,9 +268,10 @@ export function analyseSequence(seq: PoseSequence): Analysis {
         key: 'cadence',
         label: 'Cadence',
         score: 65,
-        headline:
-          "We couldn't detect enough foot contacts to estimate your step rate — a slightly longer side-on clip helps.",
-        detail: 'Cadence needs a few clear strides with the feet visible.',
+        headline: sideView
+          ? "We couldn't detect enough foot contacts to estimate your step rate — a slightly longer side-on clip helps."
+          : "We couldn't reliably estimate your step rate from this camera angle.",
+        detail: sideView ? 'Cadence needs a few clear strides with the feet visible.' : notSideOn,
         keyTime: frames[0].t,
         values: { cadence_spm: -1 },
         unreliable: true,
@@ -265,24 +294,45 @@ export function analyseSequence(seq: PoseSequence): Analysis {
   // ---- 6. Vertical oscillation (bounce)
   // Large CoM vertical displacement ("bounding") is a video-analysis flag
   // (Souza 2016) and predicts higher peak vGRF (Adams 2018).
-  const hipYs = frames.map((f) => mid(f, LM.leftHip, LM.rightHip).y)
-  const [hipLo, hipHi] = quantiles(hipYs, [0.05, 0.95])
-  const legPx = mean(frames.map((f) => legLength(f, LM.leftHip, LM.leftKnee, LM.leftAnkle)))
-  const oscRatio = legPx > 1e-4 ? (hipHi - hipLo) / legPx : 0
+  // hip height normalized by per-frame leg length, then detrended with a
+  // rolling mean so whole-body drift toward/away from the camera cancels out
+  const hipYs = frames.map((f, i) =>
+    perFrameLeg[i] > 1e-4 ? mid(f, LM.leftHip, LM.rightHip).y / perFrameLeg[i] : 0,
+  )
+  const winSec = 0.5
+  const detrended = hipYs.map((y, i) => {
+    const lo = frames[i].t - winSec / 2
+    const hi = frames[i].t + winSec / 2
+    const windowVals = hipYs.filter((_, j) => frames[j].t >= lo && frames[j].t <= hi)
+    return y - mean(windowVals)
+  })
+  const [oscLo, oscHi] = quantiles(detrended, [0.05, 0.95])
+  const oscRatio = oscHi - oscLo
   const oscDev = Math.max(0, oscRatio - H.verticalOscillation.ok)
-  const hiIdx = hipYs.indexOf(Math.max(...hipYs))
-  const verticalOscillation: MetricResult = {
-    key: 'verticalOscillation',
-    label: 'Bounce',
-    score: falloffScore(oscDev, H.verticalOscillation.falloff),
-    headline:
-      oscDev === 0
-        ? 'Your vertical bounce looks economical — energy is going forward, not up.'
-        : 'You appear to bounce vertically more than expected in this recording.',
-    detail: `Hip vertical movement is about ${(oscRatio * 100).toFixed(0)}% of leg length each stride.`,
-    keyTime: frames[hiIdx].t,
-    values: { vertical_oscillation_leg_ratio: +oscRatio.toFixed(2) },
-  }
+  const hiIdx = detrended.indexOf(Math.max(...detrended))
+  const verticalOscillation: MetricResult = sideView
+    ? {
+        key: 'verticalOscillation',
+        label: 'Bounce',
+        score: falloffScore(oscDev, H.verticalOscillation.falloff),
+        headline:
+          oscDev === 0
+            ? 'Your vertical bounce looks economical — energy is going forward, not up.'
+            : 'You appear to bounce vertically more than expected in this recording.',
+        detail: `Hip vertical movement is about ${(oscRatio * 100).toFixed(0)}% of leg length each stride.`,
+        keyTime: frames[hiIdx].t,
+        values: { vertical_oscillation_leg_ratio: +oscRatio.toFixed(2) },
+      }
+    : {
+        key: 'verticalOscillation',
+        label: 'Bounce',
+        score: 65,
+        headline: "We couldn't reliably measure your vertical bounce from this camera angle.",
+        detail: notSideOn,
+        keyTime: frames[0].t,
+        values: { vertical_oscillation_leg_ratio: -1 },
+        unreliable: true,
+      }
 
   // ---- 7. Knee flexion at initial contact
   // Injured runners tend to land with a more extended knee (Bramah 2018).
@@ -298,7 +348,18 @@ export function analyseSequence(seq: PoseSequence): Analysis {
   const stiffest = contactFlexions.length
     ? contactFlexions.reduce((a, b) => (b.v < a.v ? b : a))
     : { v: 0, t: frames[0].t }
-  const kneeAtContact: MetricResult = contactFlexions.length
+  const kneeAtContact: MetricResult = !sideView
+    ? {
+        key: 'kneeAtContact',
+        label: 'Landing knee',
+        score: 65,
+        headline: "We couldn't reliably judge your landing knee from this camera angle.",
+        detail: notSideOn,
+        keyTime: frames[0].t,
+        values: { knee_flexion_at_contact_deg: -1 },
+        unreliable: true,
+      }
+    : contactFlexions.length
     ? {
         key: 'kneeAtContact',
         label: 'Landing knee',
