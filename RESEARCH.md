@@ -29,6 +29,25 @@ clinical measurements or validated injury prediction.
 - Ground reaction forces, loading rate — require force plates; we only use
   their kinematic surrogates above.
 
+## Fitbit-derived training insights (`src/lib/fitbit.ts`)
+
+Summary-level signals available from the Fitbit Web API activity list
+(`/1/user/-/activities/list.json`, OAuth 2.0 PKCE, scopes
+`activity heartrate profile cardio_fitness`):
+
+- **Pace** per run (Fitbit speed, or duration/distance fallback) and
+  **pace consistency** — coefficient of variation of pace across recent runs.
+- **Heart rate** — per-run average HR and time in heart-rate zones;
+  higher-intensity zone share as a rough effort/intensity indicator.
+- **Cadence** — steps/duration when step counts are logged for the run.
+- **Volume** — weekly distance, per-run distance/duration/calories.
+
+Not used (require extra Fitbit approval or aren't exposed at summary level):
+per-second intraday HR/pace streams, GPS/TCX route + elevation data,
+within-run pace variability. Fitbit summaries describe training load and
+consistency — they cannot reproduce the video-based biomechanical metrics
+above and are presented separately in the UI.
+
 ## Key sources
 
 - Souza RB. *An Evidence-Based Videotaped Running Biomechanics Analysis.*
