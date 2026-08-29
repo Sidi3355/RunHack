@@ -70,9 +70,10 @@ export function personalTargets(p: Profile): PersonalTarget[] {
     return `${base} At easy paces the low end is normal — the often-quoted "180" comes from elites racing, not ${levelWord}s on easy runs.`
   })()
 
+  const article = /^[aeiou]/i.test(levelWord) ? 'an' : 'a'
   const expectation = beginner
-    ? `As ${exp === 'amateur' || exp === 'experienced' ? 'an' : 'a'} ${levelWord}, being outside a band isn't alarming — the studies changed one thing at a time and used modest (~5%) adjustments.`
-    : `As ${exp === 'amateur' || exp === 'experienced' ? 'an' : 'a'} ${levelWord}, you should sit inside this band on most reliable clips; use the trend across sessions rather than one reading.`
+    ? `As ${article} ${levelWord}, being outside a band isn't alarming — the studies changed one thing at a time and used modest (~5%) adjustments.`
+    : `As ${article} ${levelWord}, you should sit inside this band on most reliable clips; use the trend across sessions rather than one reading.`
 
   return [
     {
