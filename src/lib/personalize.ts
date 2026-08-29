@@ -86,7 +86,7 @@ export function personalTargets(p: Profile): PersonalTarget[] {
     {
       key: 'footPlacement',
       label: 'Foot placement',
-      target: 'Ankle ≤22% of leg length ahead of the hip at contact',
+      target: 'Landing under a flexing knee — ankle ≤8% of leg length ahead of the knee at contact',
       note: `The overstride flag doesn't change with demographics — but it matters more the faster you want to run, because a far-forward foot brakes every step. ${expectation}`,
       source: 'Souza 2016; Schubert 2014',
     },
@@ -132,7 +132,7 @@ export function personalInsights(analysis: Analysis, p: Profile): PersonalInsigh
   const out: PersonalInsight[] = []
 
   const cadence = metricValue(analysis, 'cadence', 'cadence_spm')
-  const footAhead = metricValue(analysis, 'footPlacement', 'foot_ahead_of_hip_leg_ratio')
+  const footAhead = metricValue(analysis, 'footPlacement', 'foot_ahead_of_knee_leg_ratio')
   const bounce = metricValue(analysis, 'verticalOscillation', 'vertical_oscillation_leg_ratio')
   const contactFlex = metricValue(analysis, 'kneeAtContact', 'knee_flexion_at_contact_deg')
 
@@ -157,10 +157,10 @@ export function personalInsights(analysis: Analysis, p: Profile): PersonalInsigh
   }
 
   // Goal pace × overstride: braking costs speed.
-  if (p.goalPaceMinPerKm != null && footAhead != null && footAhead > 0.22) {
+  if (p.goalPaceMinPerKm != null && footAhead != null && footAhead > 0.08) {
     out.push({
       title: 'Overstride is working against your pace goal',
-      text: `Your ankle lands about ${(footAhead * 100).toFixed(0)}% of leg length ahead of your hip. A foot contacting well ahead of the pelvis increases braking impulse — decelerating you on every step — so landing closer under your body is a speed-friendly change, not just an injury-prevention one.`,
+      text: `Your ankle lands about ${(footAhead * 100).toFixed(0)}% of leg length ahead of your knee (a reclined shin at contact). A foot contacting well ahead of the knee increases braking impulse — decelerating you on every step — so landing under a flexing knee is a speed-friendly change, not just an injury-prevention one.`,
       source: 'Souza 2016; Schubert 2014 (Sports Health)',
       metric: 'footPlacement',
     })

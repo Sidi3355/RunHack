@@ -25,6 +25,16 @@ export default function App() {
 
   // warm up the pose model + finish a Fitbit sign-in redirect if present
   useEffect(() => {
+    if (import.meta.env.DEV) {
+      // headless validation harness: run the full pipeline on a File and return the analysis
+      const w = window as Window & {
+        __formtwinAnalyse?: (file: File) => Promise<Analysis>
+        __formtwinExtract?: (file: File) => Promise<unknown>
+      }
+      w.__formtwinAnalyse = async (file: File) =>
+        analyseSequence(await extractPoseSequence(file, () => {}))
+      w.__formtwinExtract = async (file: File) => extractPoseSequence(file, () => {})
+    }
     loadLandmarker().catch(() => {})
     void completeAuthIfRedirected().then((ok) => {
       if (ok) setPage('fitbit')

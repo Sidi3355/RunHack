@@ -6,7 +6,7 @@ const EVIDENCE: Record<string, string> = {
   posture:
     'Target: slight forward lean (~2–12° from vertical), held steadily. Both very upright and heavily hunched trunks are flags in evidence-based 2D video analysis (Souza 2016), and injured runners showed greater trunk lean at midstance (Bramah 2018, Am J Sports Med).',
   footPlacement:
-    'Target: ankle landing close under the hip (≤22% of leg length ahead at contact). A foot landing well ahead of the pelvis is the classic 2D overstride flag (Souza 2016); shorter strides reduce joint energy absorption (Schubert 2014, Sports Health).',
+    'Target: landing under a flexing knee — ankle roughly beneath the knee at contact (≤8% of leg length ahead), i.e. a near-vertical shin. An ankle well ahead of the knee (reclined shin) is the classic 2D overstride flag (Souza 2016); shorter strides reduce joint energy absorption (Schubert 2014, Sports Health).',
   kneeMotion:
     'Target: ~40–110° of knee travel per stride. Limited stance-phase knee flexion reduces shock absorption and is one of the 14 measurements in the evidence-based video analysis framework (Souza 2016).',
   symmetry:
@@ -56,11 +56,13 @@ function quantiles(values: number[], qs: number[]): number[] {
 
 const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / Math.max(1, v.length)
 
-/** frames where a foot is near its lowest point → likely ground contact */
-function lowFootFrames(frames: PoseFrame[], ankle: number): PoseFrame[] {
-  const ys = frames.map((f) => f.landmarks[ankle].y)
-  const [thresh] = quantiles(ys, [0.8]) // y down: larger y = lower foot
-  return frames.filter((f) => f.landmarks[ankle].y >= thresh)
+/** 3-point median smoothing — knocks out single-frame pose-estimation spikes */
+function median3(v: number[]): number[] {
+  return v.map((x, i) => {
+    if (i === 0 || i === v.length - 1) return x
+    const w = [v[i - 1], x, v[i + 1]].sort((a, b) => a - b)
+    return w[1]
+  })
 }
 
 /**
@@ -68,26 +70,46 @@ function lowFootFrames(frames: PoseFrame[], ankle: number): PoseFrame[] {
  * (y down → lowest foot), spaced at least `minGap` seconds apart.
  * Approximate gait-event detection from monocular video — not force-plate truth.
  */
-function contactFrames(frames: PoseFrame[], side: 'left' | 'right', minGap = 0.22): PoseFrame[] {
+function contactFrames(frames: PoseFrame[], side: 'left' | 'right', minGap = 0.25): PoseFrame[] {
   const [hip, knee, ankle] =
     side === 'left'
       ? [LM.leftHip, LM.leftKnee, LM.leftAnkle]
       : [LM.rightHip, LM.rightKnee, LM.rightAnkle]
   // ankle depth below the hip, normalized by per-frame leg length, so body
   // translation / scale change (runner approaching camera) cancels out
-  const ys = frames.map((f) => {
-    const leg = legLength(f, hip, knee, ankle)
-    return leg > 1e-4 ? (f.landmarks[ankle].y - f.landmarks[hip].y) / leg : 0
-  })
-  const [thresh] = quantiles(ys, [0.7])
+  const ys = median3(
+    frames.map((f) => {
+      const leg = legLength(f, hip, knee, ankle)
+      return leg > 1e-4 ? (f.landmarks[ankle].y - f.landmarks[hip].y) / leg : 0
+    }),
+  )
+  // stance shows as a cluster of consecutive low-foot frames; the first frame
+  // of each cluster is the closest observable moment to initial contact
+  const [thresh] = quantiles(ys, [0.72])
   const out: PoseFrame[] = []
   let lastT = -Infinity
-  for (let i = 1; i < frames.length - 1; i++) {
-    if (ys[i] >= thresh && ys[i] >= ys[i - 1] && ys[i] >= ys[i + 1]) {
-      if (frames[i].t - lastT >= minGap) {
-        out.push(frames[i])
+  let inCluster = false
+  for (let i = 0; i < frames.length; i++) {
+    if (ys[i] >= thresh) {
+      if (!inCluster && frames[i].t - lastT >= minGap) {
+        // the knee is near its local extension maximum at touchdown, then
+        // flexes under load — refine to that moment just around cluster start
+        let best = frames[i]
+        let bestAngle = angleAt(frames[i], hip, knee, ankle)
+        for (const f of frames) {
+          if (f.t < frames[i].t - 0.15 || f.t > frames[i].t + 0.05) continue
+          const a = angleAt(f, hip, knee, ankle)
+          if (a > bestAngle) {
+            bestAngle = a
+            best = f
+          }
+        }
+        out.push(best)
         lastT = frames[i].t
       }
+      inCluster = true
+    } else {
+      inCluster = false
     }
   }
   return out
@@ -162,8 +184,8 @@ export function analyseSequence(seq: PoseSequence): Analysis {
   }
 
   // ---- 2. Knee flexion
-  const lKnee = frames.map((f) => angleAt(f, LM.leftHip, LM.leftKnee, LM.leftAnkle))
-  const rKnee = frames.map((f) => angleAt(f, LM.rightHip, LM.rightKnee, LM.rightAnkle))
+  const lKnee = median3(frames.map((f) => angleAt(f, LM.leftHip, LM.leftKnee, LM.leftAnkle)))
+  const rKnee = median3(frames.map((f) => angleAt(f, LM.rightHip, LM.rightKnee, LM.rightAnkle)))
   const [lMin, lMax] = quantiles(lKnee, [0.05, 0.95])
   const [rMin, rMax] = quantiles(rKnee, [0.05, 0.95])
   const lRange = lMax - lMin
@@ -204,16 +226,38 @@ export function analyseSequence(seq: PoseSequence): Analysis {
   }
 
   // ---- 3. Foot placement / possible overstride signal
+  // The expert 2D cue is landing "under a flexing knee": at initial contact the
+  // ankle should sit roughly beneath the knee (shin near vertical). Measuring
+  // against the hip instead flags fast-but-sound runners — at pace even elites
+  // land well ahead of the hip — so the signal is the ankle's signed distance
+  // ahead of the knee along the direction of travel, normalized by leg length.
+  const lContacts = contactFrames(frames, 'left')
+  const rContacts = contactFrames(frames, 'right')
+  const sides: [PoseFrame[], number, number, number][] = [
+    [lContacts, LM.leftHip, LM.leftKnee, LM.leftAnkle],
+    [rContacts, LM.rightHip, LM.rightKnee, LM.rightAnkle],
+  ]
+  // direction of travel from foot orientation: the toes point the way the
+  // runner is facing, which is far more stable than inferring it from
+  // ankle-vs-hip positions at estimated contacts
+  const travelSign =
+    mean(
+      frames.map(
+        (f) =>
+          f.landmarks[LM.leftFoot].x -
+          f.landmarks[LM.leftHeel].x +
+          (f.landmarks[LM.rightFoot].x - f.landmarks[LM.rightHeel].x),
+      ),
+    ) >= 0
+      ? 1
+      : -1
   const contactSignals: { v: number; t: number }[] = []
-  for (const side of ['left', 'right'] as const) {
-    const ankle = side === 'left' ? LM.leftAnkle : LM.rightAnkle
-    const hip = side === 'left' ? LM.leftHip : LM.rightHip
-    const knee = side === 'left' ? LM.leftKnee : LM.rightKnee
-    for (const f of lowFootFrames(frames, ankle)) {
+  for (const [contacts, hip, knee, ankle] of sides) {
+    for (const f of contacts) {
       const leg = legLength(f, hip, knee, ankle)
       if (leg < 1e-4) continue
-      const ahead = Math.abs(f.landmarks[ankle].x - f.landmarks[hip].x) / leg
-      contactSignals.push({ v: ahead, t: f.t })
+      const ahead = (travelSign * (f.landmarks[ankle].x - f.landmarks[knee].x)) / leg
+      contactSignals.push({ v: Math.max(0, ahead), t: f.t })
     }
   }
   const footVals = contactSignals.map((c) => c.v)
@@ -230,10 +274,10 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     headline:
       footDev === 0
         ? 'Your feet appear to land close underneath your body.'
-        : 'Your foot appears to land relatively far ahead of your hip in this recording.',
-    detail: `At likely ground-contact moments the ankle is about ${(footSignal * 100).toFixed(0)}% of leg length ahead of the hip.`,
+        : 'Your foot appears to land noticeably ahead of your knee in this recording.',
+    detail: `At likely ground-contact moments the ankle is about ${(footSignal * 100).toFixed(0)}% of leg length ahead of the knee (0% = shin vertical, landing under a flexing knee).`,
     keyTime: worstContact.t,
-    values: { foot_ahead_of_hip_leg_ratio: +footSignal.toFixed(2) },
+    values: { foot_ahead_of_knee_leg_ratio: +footSignal.toFixed(2) },
     evidence: EVIDENCE.footPlacement,
   }
 
@@ -241,7 +285,22 @@ export function analyseSequence(seq: PoseSequence): Analysis {
   const rangeDiff = Math.abs(lRange - rRange) / Math.max(1, Math.max(lRange, rRange))
   const symDev = Math.max(0, rangeDiff - H.symmetry.ok)
   const symScore = thresholdScore(rangeDiff, H.symmetry.ok, H.symmetry.falloff)
-  const symmetry: MetricResult = {
+  // a single side-on camera foreshortens the far leg, so implausibly large
+  // differences are more likely a viewpoint artefact than true asymmetry
+  const symmetry: MetricResult = rangeDiff > 0.22
+    ? {
+        key: 'symmetry',
+        label: 'Symmetry',
+        score: 65,
+        headline:
+          "We couldn't compare your left and right legs reliably in this clip — one side may be partly hidden from the camera.",
+        detail:
+          'A single side-on camera can under-measure the far leg; a difference this large is more likely a viewpoint artefact than true asymmetry.',
+        keyTime: kneeMotion.keyTime,
+        values: { knee_range_lr_difference_pct: -1 },
+        unreliable: true,
+      }
+    : {
     key: 'symmetry',
     label: 'Symmetry',
     score: symScore,
@@ -282,19 +341,63 @@ export function analyseSequence(seq: PoseSequence): Analysis {
         : 0
     }),
   )
+  // third signal: left–right ankle horizontal separation oscillates with each
+  // stride when seen from the side, and is also the cadence signal below
+  const sepRaw = median3(
+    frames.map((f, i) =>
+      perFrameLeg[i] > 1e-4
+        ? (f.landmarks[LM.leftAnkle].x - f.landmarks[LM.rightAnkle].x) / perFrameLeg[i]
+        : 0,
+    ),
+  )
+  // centre the signal so a constant lateral offset can't stop it crossing zero
+  const [sepMed] = quantiles(sepRaw, [0.5])
+  const sepSig = sepRaw.map((v) => v - sepMed)
+  const [sepLo, sepHi] = quantiles(sepSig, [0.05, 0.95])
+  const sepAmp = sepHi - sepLo
   const facingCamera = torsoVis >= 0.6 && shoulderRatio > H.sideView.maxShoulderRatio
-  const sideView = sideSwing >= H.sideView.minAnkleSwing && !facingCamera
+  const sideView =
+    Math.max(sideSwing, sepAmp / 2) >= H.sideView.minAnkleSwing && !facingCamera
   const notSideOn =
     'This signal needs a side-on clip — try filming from the side with the whole body in frame.'
 
   // ---- 5. Cadence (step rate)
   // Higher step rate reduces loading rate / braking impulse (Schubert 2014, Adams 2018).
-  const lContacts = contactFrames(frames, 'left')
-  const rContacts = contactFrames(frames, 'right')
-  const totalContacts = lContacts.length + rContacts.length
+  // The left–right ankle separation oscillates once per STRIDE, so the stride
+  // period is found by autocorrelation of that signal — robust to offsets and
+  // tracking noise that break event counting. steps/min = 2 × strides/min.
   const span = frames[frames.length - 1].t - frames[0].t
-  const stepsPerMin = span > 0.5 ? (totalContacts / span) * 60 : 0
-  const cadenceUnreliable = !sideView || totalContacts < H.cadence.minContacts || span < 2
+  const dt = span / Math.max(1, frames.length - 1)
+  const sepC = sepSig.map((v) => v - mean(sepSig))
+  const sepVar = mean(sepC.map((v) => v * v))
+  let bestLag = 0
+  let bestCorr = 0
+  if (sepVar > 1e-6 && dt > 0) {
+    const maxLag = Math.min(sepC.length - 2, Math.round(1.5 / dt))
+    const corrs: number[] = []
+    for (let lag = 1; lag <= maxLag; lag++) {
+      let s = 0
+      for (let i = 0; i + lag < sepC.length; i++) s += sepC[i] * sepC[i + lag]
+      corrs.push(s / ((sepC.length - lag) * sepVar))
+    }
+    // short lags correlate trivially (the signal varies slowly), so only
+    // accept the peak after the autocorrelation's first local minimum
+    let firstMin = 0
+    while (firstMin + 1 < corrs.length && corrs[firstMin + 1] <= corrs[firstMin]) firstMin++
+    const minLag = Math.max(firstMin + 1, Math.round(0.4 / dt))
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      const corr = corrs[lag - 1]
+      if (corr > bestCorr) {
+        bestCorr = corr
+        bestLag = lag
+      }
+    }
+  }
+  const stridePeriod = bestLag * dt
+  const stepsPerMin = stridePeriod > 0 ? 120 / stridePeriod : 0
+  // needs a clear periodic gait signal, a side-on view and 2+ strides of footage
+  const cadenceUnreliable =
+    !sideView || bestCorr < 0.35 || span < 2 * stridePeriod || stepsPerMin === 0
   const cadenceDev =
     stepsPerMin < H.cadence.idealMin
       ? H.cadence.idealMin - stepsPerMin
@@ -307,9 +410,11 @@ export function analyseSequence(seq: PoseSequence): Analysis {
         label: 'Cadence',
         score: 65,
         headline: sideView
-          ? "We couldn't detect enough foot contacts to estimate your step rate — a slightly longer side-on clip helps."
+          ? "We couldn't find a clear stride rhythm to estimate your step rate in this clip."
           : "We couldn't reliably estimate your step rate from this camera angle.",
-        detail: sideView ? 'Cadence needs a few clear strides with the feet visible.' : notSideOn,
+        detail: sideView
+          ? 'Cadence needs a few normal-speed strides with the feet visible — slow-motion or very short clips can\u2019t give a true steps-per-minute reading.'
+          : notSideOn,
         keyTime: frames[0].t,
         values: { cadence_spm: -1 },
         unreliable: true,
@@ -324,7 +429,7 @@ export function analyseSequence(seq: PoseSequence): Analysis {
             : stepsPerMin < H.cadence.idealMin
               ? `Your estimated step rate is ~${stepsPerMin.toFixed(0)} steps/min — on the lower side in this clip.`
               : `Your estimated step rate is ~${stepsPerMin.toFixed(0)} steps/min — quite high in this clip.`,
-        detail: `Detected ${totalContacts} foot contacts over ${span.toFixed(1)}s. Research links quicker, shorter steps with lower joint loading.`,
+        detail: `Estimated from the stride rhythm across ${span.toFixed(1)}s of footage. Research links quicker, shorter steps with lower joint loading.`,
         keyTime: (lContacts[0] ?? rContacts[0] ?? frames[0]).t,
         values: { cadence_spm: +stepsPerMin.toFixed(0) },
         evidence: EVIDENCE.cadence,
@@ -337,14 +442,11 @@ export function analyseSequence(seq: PoseSequence): Analysis {
   // then normalized by the extended-leg length. Per-frame normalization would
   // inject knee-flexion foreshortening into the signal, so we avoid it.
   const hipYs = frames.map((f) => mid(f, LM.leftHip, LM.rightHip).y)
-  // detrend window ≈ one stride period so within-stride motion survives while
-  // slower whole-body drift cancels (fixed windows break on slow-motion clips)
-  const contactGaps: number[] = []
-  for (const contacts of [lContacts, rContacts])
-    for (let i = 1; i < contacts.length; i++) contactGaps.push(contacts[i].t - contacts[i - 1].t)
-  const winSec = contactGaps.length
-    ? [...contactGaps].sort((a, b) => a - b)[Math.floor(contactGaps.length / 2)]
-    : 0.7
+  // detrend window ≈ one stride period (two steps) so within-stride motion
+  // survives while slower whole-body drift cancels — a window shorter than the
+  // hip's oscillation period would subtract the very signal being measured
+  const winSec =
+    stepsPerMin > 60 ? Math.min(1.5, Math.max(0.4, 120 / stepsPerMin)) : 0.7
   const detrended = hipYs.map((y, i) => {
     const lo = frames[i].t - winSec / 2
     const hi = frames[i].t + winSec / 2
@@ -400,13 +502,20 @@ export function analyseSequence(seq: PoseSequence): Analysis {
   const stiffest = contactFlexions.length
     ? contactFlexions.reduce((a, b) => (b.v < a.v ? b : a))
     : { v: 0, t: frames[0].t }
-  const kneeAtContact: MetricResult = !sideView
+  // the evidence flags only the EXTENDED side (injured runners land straighter);
+  // very high measured flexion is a contact-timing artefact, not a fault
+  const flexArtefact = avgContactFlex > 45
+  const kneeAtContact: MetricResult = !sideView || flexArtefact
     ? {
         key: 'kneeAtContact',
         label: 'Landing knee',
         score: 65,
-        headline: "We couldn't reliably judge your landing knee from this camera angle.",
-        detail: notSideOn,
+        headline: sideView
+          ? "We couldn't pinpoint your foot-contact moments precisely enough to judge your landing knee."
+          : "We couldn't reliably judge your landing knee from this camera angle.",
+        detail: sideView
+          ? 'Contact-moment detection from video was too uncertain in this clip for a fair reading.'
+          : notSideOn,
         keyTime: frames[0].t,
         values: { knee_flexion_at_contact_deg: -1 },
         unreliable: true,
@@ -415,7 +524,11 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     ? {
         key: 'kneeAtContact',
         label: 'Landing knee',
-        score: bandScore(avgContactFlex, 10, 30, H.kneeAtContact.falloff),
+        score: thresholdScore(
+          Math.max(0, H.kneeAtContact.okFlexion - avgContactFlex),
+          0,
+          H.kneeAtContact.falloff,
+        ),
         headline:
           flexDev === 0
             ? `Your knee is comfortably bent (~${avgContactFlex.toFixed(0)}°) as your foot lands — good shock absorption.`
