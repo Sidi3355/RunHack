@@ -245,7 +245,20 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     ankleSwing(LM.leftAnkle, LM.leftHip),
     ankleSwing(LM.rightAnkle, LM.rightHip),
   )
-  const sideView = sideSwing >= H.sideView.minAnkleSwing
+  // second orientation signal: from the side the shoulders nearly overlap
+  // horizontally, head-on they are widely separated relative to torso length
+  const shoulderRatio = mean(
+    frames.map((f) => {
+      const s = mid(f, LM.leftShoulder, LM.rightShoulder)
+      const h = mid(f, LM.leftHip, LM.rightHip)
+      const torso = Math.hypot(s.x - h.x, s.y - h.y)
+      return torso > 1e-4
+        ? Math.abs(f.landmarks[LM.leftShoulder].x - f.landmarks[LM.rightShoulder].x) / torso
+        : 0
+    }),
+  )
+  const facingCamera = torsoVis >= 0.6 && shoulderRatio > H.sideView.maxShoulderRatio
+  const sideView = sideSwing >= H.sideView.minAnkleSwing && !facingCamera
   const notSideOn =
     'This signal needs a side-on clip — try filming from the side with the whole body in frame.'
 

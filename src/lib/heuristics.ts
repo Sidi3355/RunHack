@@ -78,6 +78,12 @@ export const HEURISTICS = {
      * horizontal ankle travel, making gait-event metrics unreliable.
      */
     minAnkleSwing: 0.45,
+    /**
+     * Maximum shoulder horizontal separation / torso length for a side-on
+     * view. Facing the camera the shoulders are widely separated, from the
+     * side they nearly overlap. Second signal to make the guard robust.
+     */
+    maxShoulderRatio: 0.45,
   },
   overallWeights: {
     posture: 0.14,
