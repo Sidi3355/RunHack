@@ -28,11 +28,13 @@ export const HEURISTICS = {
   },
   footPlacement: {
     /**
-     * Horizontal ankle-ahead-of-hip distance at low-foot frames,
-     * normalized by leg length. Below `ok` reads as landing under the body.
+     * Horizontal ankle-ahead-of-KNEE distance at likely initial contact,
+     * normalized by leg length. 0 = shin vertical (landing under a flexing
+     * knee — the expert 2D cue). Ankle-vs-hip would falsely flag fast
+     * runners, who legitimately land ahead of the hip at pace.
      */
-    ok: 0.22,
-    falloff: 0.3,
+    ok: 0.08,
+    falloff: 0.2,
   },
   symmetry: {
     /** relative L/R difference in knee-angle range considered fine */
@@ -77,7 +79,7 @@ export const HEURISTICS = {
      * length) for a clip to count as side-on. Head-on footage shows little
      * horizontal ankle travel, making gait-event metrics unreliable.
      */
-    minAnkleSwing: 0.45,
+    minAnkleSwing: 0.35,
     /**
      * Maximum shoulder horizontal separation / torso length for a side-on
      * view. Facing the camera the shoulders are widely separated, from the

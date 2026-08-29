@@ -48,7 +48,7 @@ export function templatedAdvice(analysis: Analysis): CoachAdvice {
   const templates: Record<MetricKey, CoachAdvice> = {
     footPlacement: {
       noticed:
-        'Your foot appears to contact the ground relatively far ahead of your hip in this recording.',
+        'Your foot appears to contact the ground noticeably ahead of your knee in this recording.',
       tryThis:
         'On your next run, experiment with slightly quicker, shorter steps and think about putting your foot down closer underneath you.',
       why: 'Landing nearer your centre of mass may help you keep a smoother, more efficient movement pattern.',
