@@ -4,9 +4,14 @@ import { extractPoseSequence, loadLandmarker } from './lib/pose'
 import { analyseSequence } from './lib/metrics'
 import { getCoachAdvice, templatedAdvice } from './lib/coach'
 import { sampleSequence } from './lib/sample'
+import { saveAnalysis } from './lib/history'
+import { completeAuthIfRedirected } from './lib/fitbit'
 import Landing from './components/Landing'
 import Analyzing from './components/Analyzing'
 import Results from './components/Results'
+import Journey from './components/Journey'
+import FitbitPage from './components/FitbitPage'
+import Header, { type Page } from './components/Header'
 
 type Screen =
   | { name: 'landing'; error?: string }
@@ -14,12 +19,16 @@ type Screen =
   | { name: 'results'; analysis: Analysis; videoUrl: string | null; coach: CoachAdvice; isSample: boolean }
 
 export default function App() {
+  const [page, setPage] = useState<Page>('analyse')
   const [screen, setScreen] = useState<Screen>({ name: 'landing' })
   const videoUrlRef = useRef<string | null>(null)
 
-  // warm up the pose model in the background
+  // warm up the pose model + finish a Fitbit sign-in redirect if present
   useEffect(() => {
     loadLandmarker().catch(() => {})
+    void completeAuthIfRedirected().then((ok) => {
+      if (ok) setPage('fitbit')
+    })
   }, [])
 
   const analyse = useCallback(async (file: File) => {
@@ -32,6 +41,7 @@ export default function App() {
       if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current)
       const videoUrl = URL.createObjectURL(file)
       videoUrlRef.current = videoUrl
+      saveAnalysis(analysis)
       const coach = await getCoachAdvice(analysis).catch(() => templatedAdvice(analysis))
       setScreen({ name: 'results', analysis, videoUrl, coach, isSample: false })
     } catch (e) {
@@ -54,11 +64,18 @@ export default function App() {
 
   const reset = useCallback(() => setScreen({ name: 'landing' }), [])
 
-  if (screen.name === 'analyzing') {
-    return <Analyzing progress={screen.progress} stage={screen.stage} />
+  const navigate = (p: Page) => {
+    setPage(p)
+    if (p === 'analyse') setScreen({ name: 'landing' })
   }
-  if (screen.name === 'results') {
-    return (
+
+  let body
+  if (page === 'journey') body = <Journey />
+  else if (page === 'fitbit') body = <FitbitPage />
+  else if (screen.name === 'analyzing')
+    body = <Analyzing progress={screen.progress} stage={screen.stage} />
+  else if (screen.name === 'results')
+    body = (
       <Results
         analysis={screen.analysis}
         videoUrl={screen.videoUrl}
@@ -67,6 +84,12 @@ export default function App() {
         onReset={reset}
       />
     )
-  }
-  return <Landing onFile={analyse} onSample={showSample} error={screen.error} />
+  else body = <Landing onFile={analyse} onSample={showSample} error={screen.error} />
+
+  return (
+    <div className="leaf-bg min-h-dvh">
+      <Header page={page} onNavigate={navigate} />
+      {body}
+    </div>
+  )
 }

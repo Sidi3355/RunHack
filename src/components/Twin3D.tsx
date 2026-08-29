@@ -51,8 +51,8 @@ function Skeleton({
           <mesh key={i} position={toVec(p)}>
             <sphereGeometry args={[isHead ? 0.07 : emphasised ? 0.045 : 0.028, 16, 16]} />
             <meshStandardMaterial
-              color={emphasised ? '#22d3ee' : color}
-              emissive={emphasised ? '#22d3ee' : color}
+              color={emphasised ? '#b7e56a' : color}
+              emissive={emphasised ? '#b7e56a' : color}
               emissiveIntensity={emphasised ? 0.9 : 0.35}
               transparent={opacity < 1}
               opacity={opacity}
@@ -75,8 +75,8 @@ function Skeleton({
           <mesh key={idx} position={mid} quaternion={quat}>
             <cylinderGeometry args={[0.014, 0.014, len, 8]} />
             <meshStandardMaterial
-              color={emphasised ? '#22d3ee' : color}
-              emissive={emphasised ? '#22d3ee' : color}
+              color={emphasised ? '#b7e56a' : color}
+              emissive={emphasised ? '#b7e56a' : color}
               emissiveIntensity={emphasised ? 0.8 : 0.25}
               transparent={opacity < 1}
               opacity={opacity}
@@ -124,7 +124,7 @@ function AnimatedTwin({
   const emphasis = highlight ? new Set(METRIC_JOINTS[highlight]) : null
   return (
     <group position={[0, 1.05, 0]}>
-      <Skeleton frame={frame} color="#c4b5fd" emphasis={emphasis} />
+      <Skeleton frame={frame} color="#8fb573" emphasis={emphasis} />
       {showGhost && <Skeleton frame={ghostFrame(frame)} color="#34d399" emphasis={null} opacity={0.35} />}
     </group>
   )
@@ -147,7 +147,7 @@ export default function Twin3D({
     <div className="rounded-2xl overflow-hidden border border-line bg-panel">
       <div className="h-[46vh] min-h-[300px] touch-none">
         <Canvas camera={{ position: [1.9, 1.3, 2.6], fov: 45 }}>
-          <color attach="background" args={['#0b0b18']} />
+          <color attach="background" args={['#1d2b22']} />
           <ambientLight intensity={0.7} />
           <directionalLight position={[3, 5, 2]} intensity={1.2} />
           <Suspense fallback={null}>
@@ -192,11 +192,11 @@ export default function Twin3D({
           }}
           className="w-full"
         />
-        <span className="shrink-0 text-xs font-mono text-white/50 w-12 text-right">
+        <span className="shrink-0 text-xs font-mono text-moss/50 w-12 text-right">
           {time.toFixed(1)}s
         </span>
       </div>
-      <p className="px-3 pb-2 text-[10px] text-white/30">Drag to rotate · pinch/scroll to zoom</p>
+      <p className="px-3 pb-2 text-[10px] text-moss/40">Drag to rotate · pinch/scroll to zoom</p>
     </div>
   )
 }

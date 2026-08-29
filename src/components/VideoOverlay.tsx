@@ -88,10 +88,10 @@ export default function VideoOverlay({
         if (pa.visibility < 0.3 || pb.visibility < 0.3) continue
         const emphasised = hlJoints && hlJoints.has(a) && hlJoints.has(b)
         ctx.strokeStyle = emphasised
-          ? 'rgba(34, 211, 238, 0.95)'
+          ? 'rgba(183, 229, 106, 0.95)'
           : hlJoints
             ? 'rgba(255,255,255,0.28)'
-            : 'rgba(167, 139, 250, 0.85)'
+            : 'rgba(143, 181, 115, 0.9)'
         ctx.lineWidth = emphasised ? 4 : 2.5
         ctx.beginPath()
         ctx.moveTo(px(pa.x), py(pa.y))
@@ -101,7 +101,7 @@ export default function VideoOverlay({
       frame.landmarks.forEach((p, i) => {
         if (p.visibility < 0.3 || (i > 0 && i < 11)) return
         const emphasised = hlJoints?.has(i)
-        ctx.fillStyle = emphasised ? '#22d3ee' : hlJoints ? 'rgba(255,255,255,0.4)' : '#e9e6ff'
+        ctx.fillStyle = emphasised ? '#b7e56a' : hlJoints ? 'rgba(255,255,255,0.4)' : '#e9f2df'
         ctx.beginPath()
         ctx.arc(px(p.x), py(p.y), emphasised ? 6 : 3.5, 0, Math.PI * 2)
         ctx.fill()

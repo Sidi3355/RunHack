@@ -12,76 +12,94 @@ export default function Landing({
   const inputRef = useRef<HTMLInputElement>(null)
 
   return (
-    <div className="min-h-dvh flex flex-col items-center px-6 pt-16 pb-8 text-center relative overflow-hidden">
-      <div
-        aria-hidden
-        className="absolute -top-40 left-1/2 -translate-x-1/2 w-[36rem] h-[36rem] rounded-full opacity-25 blur-3xl pointer-events-none"
-        style={{ background: 'radial-gradient(circle, #22d3ee 0%, #a78bfa 45%, transparent 70%)' }}
-      />
-      <main className="flex-1 flex flex-col items-center justify-center max-w-md w-full relative">
-        <h1 className="font-display text-5xl sm:text-6xl font-bold tracking-tight glow-text">
-          FORMTWIN
-        </h1>
-        <p className="mt-3 font-display text-xl text-white/90">Turn movement into insight.</p>
-        <p className="mt-4 text-white/60 leading-relaxed">
-          Record a few seconds. See your movement in 3D. Understand what to work on.
-        </p>
-
-        {error && (
-          <div className="mt-6 w-full rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
-            {error}
-          </div>
-        )}
-
-        <button
-          onClick={() => inputRef.current?.click()}
-          className="mt-8 w-full rounded-2xl bg-gradient-to-r from-cyan-400 to-violet-400 px-8 py-5 font-display text-lg font-bold text-ink text-black shadow-lg shadow-cyan-500/25 active:scale-[0.98] transition-transform"
-        >
-          ANALYSE MY RUN
-        </button>
-        <input
-          ref={inputRef}
-          type="file"
-          accept="video/*"
-          capture="environment"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) onFile(f)
-            e.target.value = ''
-          }}
-        />
-
-        <div className="mt-5 flex gap-4 text-sm text-white/50">
-          <span>No wearables.</span>
-          <span>No markers.</span>
-          <span>Just your phone.</span>
-        </div>
-
-        <div className="mt-8 w-full rounded-2xl border border-line bg-panel p-4 text-left">
-          <p className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-2">
-            Quick recording guide
+    <div className="mx-auto flex min-h-[calc(100dvh-57px)] max-w-6xl flex-col px-4 pt-10 pb-8 sm:px-6">
+      <main className="grid flex-1 items-center gap-10 lg:grid-cols-2">
+        {/* hero */}
+        <div className="text-center lg:text-left">
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-fern/70">
+            Run with awareness
           </p>
-          <ul className="space-y-1.5 text-sm text-white/70">
-            <li>→ Film from the side</li>
-            <li>→ Keep the whole body visible</li>
-            <li>→ 5–10 seconds is enough</li>
-          </ul>
+          <h1 className="mt-3 font-display text-5xl font-bold tracking-tight sm:text-6xl">
+            Turn <span className="glow-text">movement</span> into insight.
+          </h1>
+          <p className="mx-auto mt-4 max-w-md leading-relaxed text-moss/60 lg:mx-0">
+            Record a few seconds of your run. See your body as a living 3D movement twin, and
+            understand — gently, clearly — what to work on.
+          </p>
+
+          {error && (
+            <div className="mt-6 rounded-2xl border border-peach/60 bg-peach/15 px-4 py-3 text-sm text-moss">
+              {error}
+            </div>
+          )}
+
+          <button
+            onClick={() => inputRef.current?.click()}
+            className="mt-8 w-full rounded-full bg-fern px-8 py-5 font-display text-lg font-bold text-cream shadow-lg shadow-fern/20 transition-transform active:scale-[0.98] sm:w-auto sm:px-14"
+          >
+            Analyse my run
+          </button>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="video/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) onFile(f)
+              e.target.value = ''
+            }}
+          />
+
+          <div className="mt-5 flex justify-center gap-4 text-sm text-moss/50 lg:justify-start">
+            <span>No wearables.</span>
+            <span>No markers.</span>
+            <span>Just your phone.</span>
+          </div>
+
+          <button
+            onClick={onSample}
+            className="mt-6 text-sm text-fern underline decoration-fern/30 underline-offset-4"
+          >
+            View sample analysis
+          </button>
         </div>
 
-        <button
-          onClick={onSample}
-          className="mt-6 text-sm text-cyan-300/80 underline underline-offset-4 decoration-cyan-300/30"
-        >
-          View sample analysis
-        </button>
-
-        <p className="mt-8 text-xs text-white/40 max-w-xs">
-          Your movement stays yours. Video analysis happens on your device — your video is never
-          uploaded.
-        </p>
+        {/* guide + privacy */}
+        <div className="mx-auto w-full max-w-md space-y-4">
+          <div className="rounded-3xl border border-line bg-panel p-6 text-left">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-moss/50">
+              Quick recording guide
+            </p>
+            <ul className="space-y-2.5 text-sm text-moss/75">
+              <li className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sage font-display text-xs font-bold text-fern">
+                  1
+                </span>
+                Film from the side
+              </li>
+              <li className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sage font-display text-xs font-bold text-fern">
+                  2
+                </span>
+                Keep the whole body visible
+              </li>
+              <li className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sage font-display text-xs font-bold text-fern">
+                  3
+                </span>
+                5–10 seconds is enough
+              </li>
+            </ul>
+          </div>
+          <div className="rounded-3xl bg-sage/50 p-5 text-left text-sm leading-relaxed text-moss/70">
+            Your movement stays yours. Video analysis happens on your device — your video is never
+            uploaded.
+          </div>
+        </div>
       </main>
-      <footer className="mt-10 text-[11px] text-white/30 max-w-sm">
+      <footer className="mt-10 text-center text-[11px] text-moss/40">
         FormTwin is a prototype coaching tool and is not a medical device or substitute for
         professional medical advice.
       </footer>
