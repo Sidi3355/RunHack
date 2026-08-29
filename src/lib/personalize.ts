@@ -34,6 +34,99 @@ export function hasPersonalization(p: Profile): boolean {
   return p.age != null || p.experience != null || p.yearsRunning != null || p.goalPaceMinPerKm != null
 }
 
+export interface PersonalTarget {
+  key: MetricKey
+  label: string
+  /** the evidence-based target */
+  target: string
+  /** how this target reads for THIS runner's profile — honest about when the evidence doesn't differentiate */
+  note: string
+  source: string
+}
+
+/**
+ * Demographic-aware target guidance. The underlying 2D-video bands come from
+ * the cited literature and — except for cadence, which is genuinely
+ * pace/speed-dependent — the research does NOT publish different biomechanical
+ * targets per age or ability level. So instead of inventing demographic
+ * numbers, each note states what the evidence supports for this runner's
+ * level: where the band genuinely shifts (cadence with pace) and where only
+ * the expectation of hitting it differs.
+ */
+export function personalTargets(p: Profile): PersonalTarget[] {
+  const exp = p.experience
+  const beginner = exp === 'new' || exp === 'amateur'
+  const levelWord = exp ? EXPERIENCE_LABEL[exp] : 'runner'
+
+  const cadenceNote = (() => {
+    const base =
+      'Cadence is the one target that genuinely shifts with your profile: step rate rises with running speed, so the right spot in the 160–190 band depends on pace.'
+    if (p.goalPaceMinPerKm != null && p.goalPaceMinPerKm <= 5) {
+      return `${base} At your ~${p.goalPaceMinPerKm.toFixed(1)} min/km goal pace, most runners sit in the middle-to-upper part of the band (~170–185); at easy pace the low end is normal.`
+    }
+    if (p.goalPaceMinPerKm != null) {
+      return `${base} At your ~${p.goalPaceMinPerKm.toFixed(1)} min/km goal pace, the low-to-middle part of the band (~160–175) is typical; forcing an elite-style 180+ at easy pace isn't supported by the evidence.`
+    }
+    return `${base} At easy paces the low end is normal — the often-quoted "180" comes from elites racing, not ${levelWord}s on easy runs.`
+  })()
+
+  const expectation = beginner
+    ? `As a ${levelWord}, being outside a band isn't alarming — the studies changed one thing at a time and used modest (~5%) adjustments.`
+    : `As a ${levelWord}, you should sit inside this band on most reliable clips; use the trend across sessions rather than one reading.`
+
+  return [
+    {
+      key: 'posture',
+      label: 'Posture',
+      target: 'Slight forward lean, ~2–12° from vertical, held steadily',
+      note: `The evidence-based band is the same across ages and levels. ${expectation}`,
+      source: 'Souza 2016; Bramah 2018',
+    },
+    {
+      key: 'footPlacement',
+      label: 'Foot placement',
+      target: 'Ankle ≤22% of leg length ahead of the hip at contact',
+      note: `The overstride flag doesn't change with demographics — but it matters more the faster you want to run, because a far-forward foot brakes every step. ${expectation}`,
+      source: 'Souza 2016; Schubert 2014',
+    },
+    {
+      key: 'kneeMotion',
+      label: 'Knee motion',
+      target: '~40–110° of knee travel per stride',
+      note: `Knee range naturally grows with speed: at easy pace expect the lower half of this band; nearer the top when running fast. No separate band per age or level is published. ${expectation}`,
+      source: 'Souza 2016',
+    },
+    {
+      key: 'symmetry',
+      label: 'Symmetry',
+      target: 'Left/right knee-range difference ≤12%',
+      note: `Symmetry expectations are the same for every runner — the literature treats between-limb differences as a consistency flag at any level. ${expectation}`,
+      source: 'IJSPT 2023',
+    },
+    {
+      key: 'cadence',
+      label: 'Cadence',
+      target: '~160–190 steps/min (pace-dependent)',
+      note: cadenceNote,
+      source: 'Schubert 2014; Anderson 2022',
+    },
+    {
+      key: 'verticalOscillation',
+      label: 'Bounce',
+      target: 'Hip vertical travel ≤11% of leg length per stride',
+      note: `This ceiling applies to all runners; the research doesn't lower or raise it per demographic. ${expectation}`,
+      source: 'Souza 2016; Adams 2018',
+    },
+    {
+      key: 'kneeAtContact',
+      label: 'Landing knee',
+      target: '~10–30° of knee bend as the foot lands',
+      note: `The injured-vs-healthy comparison behind this band wasn't split by age or ability — a softly bent knee at contact is the target for everyone${p.age != null && p.age >= 45 ? ', and load-friendly landings are a sensible emphasis for masters runners' : ''}. ${expectation}`,
+      source: 'Bramah 2018',
+    },
+  ]
+}
+
 export function personalInsights(analysis: Analysis, p: Profile): PersonalInsight[] {
   const out: PersonalInsight[] = []
 

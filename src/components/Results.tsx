@@ -4,7 +4,8 @@ import Twin3D from './Twin3D'
 import VideoOverlay from './VideoOverlay'
 import ErrorBoundary from './ErrorBoundary'
 import { loadProfile } from '../lib/history'
-import { hasPersonalization, personalInsights } from '../lib/personalize'
+import { hasPersonalization, personalInsights, personalTargets } from '../lib/personalize'
+import { downloadCardPdf, downloadCardPng, renderResultsCard } from '../lib/export'
 
 function scoreColor(s: number) {
   if (s >= 80) return 'text-fern'
@@ -32,6 +33,14 @@ export default function Results({
   const confidencePct = Math.round(analysis.confidence * 100)
   const profile = useMemo(() => loadProfile(), [])
   const insights = useMemo(() => personalInsights(analysis, profile), [analysis, profile])
+  const targets = useMemo(() => personalTargets(profile), [profile])
+  const [showTargets, setShowTargets] = useState(false)
+
+  const exportCard = (kind: 'png' | 'pdf') => {
+    const canvas = renderResultsCard(analysis, coach, profile)
+    if (kind === 'png') downloadCardPng(canvas)
+    else downloadCardPdf(canvas)
+  }
 
   const selectMetric = (key: MetricKey, keyTime: number) => {
     setSelected((prev) => (prev === key ? null : key))
@@ -44,9 +53,23 @@ export default function Results({
         <button onClick={onReset} className="text-sm text-moss/50">
           ← New analysis
         </button>
-        <span className="rounded-full border border-line bg-panel px-2.5 py-1 text-[11px] text-moss/50">
-          Analysis confidence {confidencePct}%
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => exportCard('png')}
+            className="rounded-full border border-line bg-panel px-3 py-1 text-[11px] text-moss/60 hover:text-moss"
+          >
+            ⤓ Card PNG
+          </button>
+          <button
+            onClick={() => exportCard('pdf')}
+            className="rounded-full border border-line bg-panel px-3 py-1 text-[11px] text-moss/60 hover:text-moss"
+          >
+            ⤓ Card PDF
+          </button>
+          <span className="rounded-full border border-line bg-panel px-2.5 py-1 text-[11px] text-moss/50">
+            Analysis confidence {confidencePct}%
+          </span>
+        </div>
       </header>
 
       {isSample && (
@@ -205,6 +228,38 @@ export default function Results({
                 combine your profile with what we measured in this clip — grounded in the same
                 research as the scores.
               </p>
+            )}
+          </section>
+
+          <section className="mt-8 rounded-3xl border border-line bg-panel p-5">
+            <button
+              onClick={() => setShowTargets((s) => !s)}
+              className="flex w-full items-center justify-between text-left"
+            >
+              <span className="text-xs font-semibold uppercase tracking-wider text-moss/60">
+                Your targets{hasPersonalization(profile) ? ' — tuned to your profile' : ''}
+              </span>
+              <span className="text-moss/40">{showTargets ? '−' : '+'}</span>
+            </button>
+            {showTargets && (
+              <div className="mt-4 space-y-4">
+                <p className="text-xs leading-relaxed text-moss/50">
+                  These are the evidence-based targets each signal is scored against. Except for
+                  cadence — which genuinely shifts with pace — the research does not publish
+                  different biomechanical targets per age or ability, so we tell you honestly how
+                  each target applies to your level instead of inventing demographic numbers.
+                </p>
+                {targets.map((t) => (
+                  <div key={t.key} className="border-t border-line pt-3">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="font-display text-sm font-semibold text-moss/90">{t.label}</p>
+                      <p className="text-right text-xs font-medium text-fern">{t.target}</p>
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-moss/60">{t.note}</p>
+                    <p className="mt-0.5 text-[11px] text-moss/40">Source: {t.source}</p>
+                  </div>
+                ))}
+              </div>
             )}
           </section>
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MetricKey, PoseSequence } from '../types'
 import { METRIC_JOINTS, SKELETON_EDGES } from '../types'
+import { downloadOriginalVideo, exportOverlayVideo } from '../lib/export'
 
 export default function VideoOverlay({
   videoUrl,
@@ -17,6 +18,8 @@ export default function VideoOverlay({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [playing, setPlaying] = useState(false)
   const [time, setTime] = useState(0)
+  const [exporting, setExporting] = useState<null | number>(null)
+  const [exportError, setExportError] = useState('')
   const highlightRef = useRef(highlight)
   highlightRef.current = highlight
 
@@ -139,6 +142,35 @@ export default function VideoOverlay({
         <div className="absolute bottom-2 right-3 text-xs font-mono text-white/70 bg-black/50 rounded px-1.5 py-0.5">
           {time.toFixed(2)}s
         </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => {
+            setExportError('')
+            void downloadOriginalVideo(videoUrl).catch(() =>
+              setExportError('Could not download the original video.'),
+            )
+          }}
+          className="rounded-full border border-line bg-panel px-3 py-1.5 text-xs text-moss/70 hover:text-moss"
+        >
+          ⤓ Download original
+        </button>
+        <button
+          disabled={exporting != null}
+          onClick={() => {
+            setExportError('')
+            setExporting(0)
+            void exportOverlayVideo(videoUrl, sequence, (f) => setExporting(f))
+              .catch(() => setExportError('Could not export the overlay video on this device.'))
+              .finally(() => setExporting(null))
+          }}
+          className="rounded-full border border-line bg-panel px-3 py-1.5 text-xs text-moss/70 hover:text-moss disabled:opacity-50"
+        >
+          {exporting != null
+            ? `Exporting… ${Math.round(exporting * 100)}%`
+            : '⤓ Download with skeleton'}
+        </button>
+        {exportError && <span className="text-xs text-rose-500">{exportError}</span>}
       </div>
       <div className="mt-3 flex items-center gap-3">
         <button
