@@ -154,6 +154,12 @@ export default function Results({
               <div className="mt-3 rounded-2xl border border-line bg-panel px-4 py-3 text-sm text-moss/70">
                 <p>{selectedMetric.headline}</p>
                 <p className="mt-1 text-xs text-moss/45">{selectedMetric.detail}</p>
+                {selectedMetric.evidence && (
+                  <p className="mt-2 border-t border-line pt-2 text-xs leading-relaxed text-moss/50">
+                    <span className="font-semibold text-fern/80">Why this score: </span>
+                    {selectedMetric.evidence}
+                  </p>
+                )}
               </div>
             )}
           </section>

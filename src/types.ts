@@ -48,6 +48,8 @@ export interface MetricResult {
   values: Record<string, number>
   /** true when the clip didn't let us measure this signal with confidence */
   unreliable?: boolean
+  /** why this score: target range + research source behind the heuristic */
+  evidence?: string
 }
 
 export interface Analysis {

@@ -1,6 +1,23 @@
 import type { Analysis, MetricResult, PoseFrame, PoseSequence } from '../types'
 import { LM } from '../types'
-import { HEURISTICS, falloffScore } from './heuristics'
+import { HEURISTICS, bandScore, thresholdScore } from './heuristics'
+
+const EVIDENCE: Record<string, string> = {
+  posture:
+    'Target: slight forward lean (~2–12° from vertical), held steadily. Both very upright and heavily hunched trunks are flags in evidence-based 2D video analysis (Souza 2016), and injured runners showed greater trunk lean at midstance (Bramah 2018, Am J Sports Med).',
+  footPlacement:
+    'Target: ankle landing close under the hip (≤22% of leg length ahead at contact). A foot landing well ahead of the pelvis is the classic 2D overstride flag (Souza 2016); shorter strides reduce joint energy absorption (Schubert 2014, Sports Health).',
+  kneeMotion:
+    'Target: ~40–110° of knee travel per stride. Limited stance-phase knee flexion reduces shock absorption and is one of the 14 measurements in the evidence-based video analysis framework (Souza 2016).',
+  symmetry:
+    'Target: left/right knee-range difference ≤12%. Between-limb kinematic differences are used clinically as consistency flags; 2D sagittal measures are reliable surrogates for 3D capture (IJSPT 2023).',
+  cadence:
+    'Target: ~160–190 steps/min. Raising step rate ~5–10% consistently lowers vertical loading rate, braking impulse and joint energy absorption (Schubert 2014; Adams 2018; Anderson 2022 meta-analysis).',
+  verticalOscillation:
+    'Target: hip vertical travel ≤11% of leg length per stride. Large vertical CoM displacement (“bounding”) is a standard video-analysis flag (Souza 2016) and predicts higher peak vertical ground-reaction force (Adams 2018, IJSPT).',
+  kneeAtContact:
+    'Target: ~10–30° of knee bend as the foot lands. Injured runners across four common soft-tissue injuries landed with a more extended knee at initial contact (Bramah 2018, Am J Sports Med).',
+}
 
 // These are approximate camera-based signals from monocular pose estimation,
 // not clinical measurements.
@@ -110,10 +127,9 @@ export function analyseSequence(seq: PoseSequence): Analysis {
       : avgLean > H.torsoLean.idealMax
         ? avgLean - H.torsoLean.idealMax
         : 0
-  const rangeDev = Math.max(0, leanRange - H.torsoLean.rangeOk)
   const postureScore = Math.round(
-    0.65 * falloffScore(leanDev, H.torsoLean.falloff) +
-      0.35 * falloffScore(rangeDev, H.torsoLean.rangeFalloff),
+    0.65 * bandScore(avgLean, H.torsoLean.idealMin, H.torsoLean.idealMax, H.torsoLean.falloff) +
+      0.35 * thresholdScore(leanRange, H.torsoLean.rangeOk, H.torsoLean.rangeFalloff),
   )
   const maxLeanFrame = frames[leans.indexOf(Math.max(...leans))]
   const postureUnreliable = torsoVis < 0.6 || avgLean > 45
@@ -142,6 +158,7 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     detail: `Average lean ${avgLean.toFixed(1)}°, varying about ${leanRange.toFixed(1)}° through the stride.`,
     keyTime: maxLeanFrame.t,
     values: { torso_lean_deg: +avgLean.toFixed(1), torso_lean_range_deg: +leanRange.toFixed(1) },
+    evidence: EVIDENCE.posture,
   }
 
   // ---- 2. Knee flexion
@@ -158,7 +175,12 @@ export function analyseSequence(seq: PoseSequence): Analysis {
       : avgRange > H.kneeFlexion.idealRangeMax
         ? avgRange - H.kneeFlexion.idealRangeMax
         : 0
-  const kneeScore = falloffScore(kneeDev, H.kneeFlexion.falloff)
+  const kneeScore = bandScore(
+    avgRange,
+    H.kneeFlexion.idealRangeMin,
+    H.kneeFlexion.idealRangeMax,
+    H.kneeFlexion.falloff,
+  )
   const minIdx = lKnee.indexOf(Math.min(...lKnee))
   const kneeMotion: MetricResult = {
     key: 'kneeMotion',
@@ -178,6 +200,7 @@ export function analyseSequence(seq: PoseSequence): Analysis {
       right_knee_min_deg: +rMin.toFixed(0),
       right_knee_max_deg: +rMax.toFixed(0),
     },
+    evidence: EVIDENCE.kneeMotion,
   }
 
   // ---- 3. Foot placement / possible overstride signal
@@ -196,7 +219,7 @@ export function analyseSequence(seq: PoseSequence): Analysis {
   const footVals = contactSignals.map((c) => c.v)
   const footSignal = footVals.length ? quantiles(footVals, [0.75])[0] : 0
   const footDev = Math.max(0, footSignal - H.footPlacement.ok)
-  const footScore = falloffScore(footDev, H.footPlacement.falloff)
+  const footScore = thresholdScore(footSignal, H.footPlacement.ok, H.footPlacement.falloff)
   const worstContact = contactSignals.length
     ? contactSignals.reduce((a, b) => (b.v > a.v ? b : a))
     : { v: 0, t: frames[0].t }
@@ -211,12 +234,13 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     detail: `At likely ground-contact moments the ankle is about ${(footSignal * 100).toFixed(0)}% of leg length ahead of the hip.`,
     keyTime: worstContact.t,
     values: { foot_ahead_of_hip_leg_ratio: +footSignal.toFixed(2) },
+    evidence: EVIDENCE.footPlacement,
   }
 
   // ---- 4. Left/right symmetry
   const rangeDiff = Math.abs(lRange - rRange) / Math.max(1, Math.max(lRange, rRange))
   const symDev = Math.max(0, rangeDiff - H.symmetry.ok)
-  const symScore = falloffScore(symDev, H.symmetry.falloff)
+  const symScore = thresholdScore(rangeDiff, H.symmetry.ok, H.symmetry.falloff)
   const symmetry: MetricResult = {
     key: 'symmetry',
     label: 'Symmetry',
@@ -228,6 +252,7 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     detail: `Knee-range difference between sides is about ${(rangeDiff * 100).toFixed(0)}%.`,
     keyTime: kneeMotion.keyTime,
     values: { knee_range_lr_difference_pct: +(rangeDiff * 100).toFixed(0) },
+    evidence: EVIDENCE.symmetry,
   }
 
   // ---- side-view check: cadence/bounce/landing-knee are only meaningful on
@@ -292,7 +317,7 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     : {
         key: 'cadence',
         label: 'Cadence',
-        score: falloffScore(cadenceDev, H.cadence.falloff),
+        score: bandScore(stepsPerMin, H.cadence.idealMin, H.cadence.idealMax, H.cadence.falloff),
         headline:
           cadenceDev === 0
             ? `Estimated step rate is ~${stepsPerMin.toFixed(0)} steps/min — in a commonly recommended range.`
@@ -302,6 +327,7 @@ export function analyseSequence(seq: PoseSequence): Analysis {
         detail: `Detected ${totalContacts} foot contacts over ${span.toFixed(1)}s. Research links quicker, shorter steps with lower joint loading.`,
         keyTime: (lContacts[0] ?? rContacts[0] ?? frames[0]).t,
         values: { cadence_spm: +stepsPerMin.toFixed(0) },
+        evidence: EVIDENCE.cadence,
       }
 
   // ---- 6. Vertical oscillation (bounce)
@@ -335,7 +361,7 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     ? {
         key: 'verticalOscillation',
         label: 'Bounce',
-        score: falloffScore(oscDev, H.verticalOscillation.falloff),
+        score: thresholdScore(oscRatio, H.verticalOscillation.ok, H.verticalOscillation.falloff),
         headline:
           oscDev === 0
             ? 'Your vertical bounce looks economical — energy is going forward, not up.'
@@ -343,6 +369,7 @@ export function analyseSequence(seq: PoseSequence): Analysis {
         detail: `Hip vertical movement is about ${(oscRatio * 100).toFixed(0)}% of leg length each stride.`,
         keyTime: frames[hiIdx].t,
         values: { vertical_oscillation_leg_ratio: +oscRatio.toFixed(2) },
+        evidence: EVIDENCE.verticalOscillation,
       }
     : {
         key: 'verticalOscillation',
@@ -388,7 +415,7 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     ? {
         key: 'kneeAtContact',
         label: 'Landing knee',
-        score: falloffScore(flexDev, H.kneeAtContact.falloff),
+        score: bandScore(avgContactFlex, 10, 30, H.kneeAtContact.falloff),
         headline:
           flexDev === 0
             ? `Your knee is comfortably bent (~${avgContactFlex.toFixed(0)}°) as your foot lands — good shock absorption.`
@@ -396,6 +423,7 @@ export function analyseSequence(seq: PoseSequence): Analysis {
         detail: `A softly bent knee at contact helps the leg absorb load; a very straight landing leg is a common flag in video gait analysis.`,
         keyTime: stiffest.t,
         values: { knee_flexion_at_contact_deg: +avgContactFlex.toFixed(0) },
+        evidence: EVIDENCE.kneeAtContact,
       }
     : {
         key: 'kneeAtContact',

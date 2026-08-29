@@ -96,8 +96,45 @@ export const HEURISTICS = {
   },
 } as const
 
-/** map a deviation (0=perfect) with falloff to a 0..100 score */
-export function falloffScore(deviation: number, falloff: number): number {
-  const s = 100 * (1 - Math.min(1, Math.max(0, deviation) / falloff))
+/**
+ * Scoring philosophy: monocular pose estimates carry real measurement
+ * uncertainty, so no camera-based observation earns a perfect 100 — scores
+ * top out at MAX_SCORE, and being merely inside a target band earns less
+ * than sitting near its centre. Deviation beyond the band decays toward 5.
+ */
+export const MAX_SCORE = 92
+const BAND_EDGE_SCORE = 78
+
+/**
+ * Score a value against an ideal band: MAX_SCORE at the band centre,
+ * BAND_EDGE_SCORE at the edges, decaying to 5 at edge+falloff beyond.
+ */
+export function bandScore(
+  value: number,
+  idealMin: number,
+  idealMax: number,
+  falloff: number,
+): number {
+  const centre = (idealMin + idealMax) / 2
+  const halfWidth = Math.max(1e-6, (idealMax - idealMin) / 2)
+  if (value >= idealMin && value <= idealMax) {
+    const frac = Math.abs(value - centre) / halfWidth
+    return Math.round(MAX_SCORE - (MAX_SCORE - BAND_EDGE_SCORE) * frac)
+  }
+  const dev = value < idealMin ? idealMin - value : value - idealMax
+  const s = BAND_EDGE_SCORE * (1 - Math.min(1, dev / falloff))
+  return Math.round(Math.max(5, s))
+}
+
+/**
+ * Score a magnitude where 0 is best and `ok` is the acceptable threshold:
+ * MAX_SCORE at 0, BAND_EDGE_SCORE at `ok`, decaying to 5 at ok+falloff.
+ */
+export function thresholdScore(value: number, ok: number, falloff: number): number {
+  const v = Math.max(0, value)
+  if (v <= ok) {
+    return Math.round(MAX_SCORE - (MAX_SCORE - BAND_EDGE_SCORE) * (v / Math.max(1e-6, ok)))
+  }
+  const s = BAND_EDGE_SCORE * (1 - Math.min(1, (v - ok) / falloff))
   return Math.round(Math.max(5, s))
 }
