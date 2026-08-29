@@ -66,18 +66,33 @@ export function deleteEntry(id: string): HistoryEntry[] {
 
 const PROFILE_KEY = 'formtwin.profile.v1'
 
+export type ExperienceLevel = 'new' | 'amateur' | 'experienced' | 'competitive'
+
 export interface Profile {
   name: string
+  age: number | null
+  experience: ExperienceLevel | null
+  yearsRunning: number | null
+  /** target pace in minutes per kilometre */
+  goalPaceMinPerKm: number | null
+}
+
+export const EMPTY_PROFILE: Profile = {
+  name: '',
+  age: null,
+  experience: null,
+  yearsRunning: null,
+  goalPaceMinPerKm: null,
 }
 
 export function loadProfile(): Profile {
   try {
     const raw = localStorage.getItem(PROFILE_KEY)
-    if (raw) return JSON.parse(raw) as Profile
+    if (raw) return { ...EMPTY_PROFILE, ...(JSON.parse(raw) as Partial<Profile>) }
   } catch {
     /* fall through */
   }
-  return { name: '' }
+  return { ...EMPTY_PROFILE }
 }
 
 export function saveProfile(p: Profile) {

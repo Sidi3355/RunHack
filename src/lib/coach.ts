@@ -1,4 +1,5 @@
 import type { Analysis, CoachAdvice, MetricKey } from '../types'
+import { loadProfile } from './history'
 
 /**
  * The coach never sees the video. It only receives the derived,
@@ -10,11 +11,16 @@ export function coachPayload(analysis: Analysis) {
     Object.assign(v, m.values)
     v[`${m.key}_score`] = m.score
   }
+  const p = loadProfile()
   return {
     ...v,
     overall_score: analysis.overallScore,
     analysis_confidence: +analysis.confidence.toFixed(2),
     primary_observation: analysis.primary.key,
+    ...(p.age != null ? { runner_age: p.age } : {}),
+    ...(p.yearsRunning != null ? { runner_years_running: p.yearsRunning } : {}),
+    ...(p.goalPaceMinPerKm != null ? { runner_goal_pace_min_per_km: p.goalPaceMinPerKm } : {}),
+    ...(p.experience != null ? { runner_experience: p.experience } : {}),
   }
 }
 

@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { Analysis, CoachAdvice, MetricKey } from '../types'
 import Twin3D from './Twin3D'
 import VideoOverlay from './VideoOverlay'
 import ErrorBoundary from './ErrorBoundary'
+import { loadProfile } from '../lib/history'
+import { hasPersonalization, personalInsights } from '../lib/personalize'
 
 function scoreColor(s: number) {
   if (s >= 80) return 'text-fern'
@@ -28,6 +30,8 @@ export default function Results({
   const [showGhost, setShowGhost] = useState(false)
   const selectedMetric = analysis.metrics.find((m) => m.key === selected)
   const confidencePct = Math.round(analysis.confidence * 100)
+  const profile = useMemo(() => loadProfile(), [])
+  const insights = useMemo(() => personalInsights(analysis, profile), [analysis, profile])
 
   const selectMetric = (key: MetricKey, keyTime: number) => {
     setSelected((prev) => (prev === key ? null : key))
@@ -161,6 +165,46 @@ export default function Results({
                   </p>
                 )}
               </div>
+            )}
+          </section>
+
+          <section className="mt-8 rounded-3xl border border-sky/60 bg-gradient-to-b from-sky/20 to-transparent p-5">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-moss/60">
+              For you{profile.name ? `, ${profile.name}` : ''}
+            </p>
+            {hasPersonalization(profile) ? (
+              insights.length ? (
+                <div className="space-y-4">
+                  {insights.map((ins) => (
+                    <div key={ins.title}>
+                      <button
+                        className="text-left font-display text-sm font-semibold text-moss/90"
+                        onClick={() => {
+                          if (ins.metric) {
+                            const m = analysis.metrics.find((x) => x.key === ins.metric)
+                            if (m) selectMetric(m.key, m.keyTime)
+                          }
+                        }}
+                      >
+                        {ins.title}
+                      </button>
+                      <p className="mt-1 text-sm leading-relaxed text-moss/70">{ins.text}</p>
+                      <p className="mt-1 text-[11px] text-moss/45">Source: {ins.source}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-moss/60">
+                  We couldn't measure the signals your profile relates to in this clip — a clear
+                  side-on recording unlocks personalized insights.
+                </p>
+              )
+            ) : (
+              <p className="text-sm text-moss/60">
+                Add your age, experience level and goal pace under Account to get insights that
+                combine your profile with what we measured in this clip — grounded in the same
+                research as the scores.
+              </p>
             )}
           </section>
 
