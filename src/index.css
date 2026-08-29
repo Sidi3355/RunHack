@@ -1,0 +1,47 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  /* nature-inspired palette: warm cream, moss, sage, pastel peach, soft neon lime */
+  --color-cream: #f7f5ec;
+  --color-moss: #22372b;
+  --color-fern: #3f6b4f;
+  --color-sage: #dbe7d4;
+  --color-line: #e0dcc9;
+  --color-panel: #fffdf6;
+  --color-panel2: #efecdd;
+  --color-peach: #f2b98c;
+  --color-lime: #b7e56a;
+  --color-sky: #bfe0d6;
+}
+
+html,
+body {
+  background: var(--color-cream);
+  color: var(--color-moss);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.glow-text {
+  background: linear-gradient(92deg, #3f6b4f, #8fb573);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.leaf-bg {
+  background:
+    radial-gradient(60rem 30rem at 85% -10%, rgba(183, 229, 106, 0.18), transparent 60%),
+    radial-gradient(50rem 28rem at -10% 20%, rgba(191, 224, 214, 0.35), transparent 60%),
+    var(--color-cream);
+}
+
+input[type='range'] {
+  accent-color: #3f6b4f;
+}
