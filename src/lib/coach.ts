@@ -6,13 +6,12 @@ import type { Analysis, CoachAdvice, MetricKey } from '../types'
  */
 export function coachPayload(analysis: Analysis) {
   const v: Record<string, number> = {}
-  for (const m of analysis.metrics) Object.assign(v, m.values)
+  for (const m of analysis.metrics) {
+    Object.assign(v, m.values)
+    v[`${m.key}_score`] = m.score
+  }
   return {
     ...v,
-    posture_score: analysis.metrics.find((m) => m.key === 'posture')!.score,
-    foot_placement_score: analysis.metrics.find((m) => m.key === 'footPlacement')!.score,
-    knee_motion_score: analysis.metrics.find((m) => m.key === 'kneeMotion')!.score,
-    symmetry_score: analysis.metrics.find((m) => m.key === 'symmetry')!.score,
     overall_score: analysis.overallScore,
     analysis_confidence: +analysis.confidence.toFixed(2),
     primary_observation: analysis.primary.key,
@@ -69,6 +68,28 @@ export function templatedAdvice(analysis: Analysis): CoachAdvice {
       tryThis:
         'Try a short relaxed run focusing on an even rhythm — some runners find counting steps left-right helps.',
       why: 'A more even left-right rhythm can make your stride feel smoother and more consistent.',
+      generative: false,
+    },
+    cadence: {
+      noticed: analysis.primary.headline,
+      tryThis:
+        'Try increasing your step rate by around 5% — quicker, lighter steps at the same speed. A metronome app around 170–180 beats/min can help.',
+      why: 'Research links a modestly higher step rate with lower impact loading at the hip, knee and ankle.',
+      generative: false,
+    },
+    verticalOscillation: {
+      noticed: 'You appear to bounce vertically more than expected in this recording.',
+      tryThis:
+        'Imagine running under a low ceiling — keep your head level and let quicker steps carry you forward instead of up.',
+      why: 'Less vertical bounce tends to mean lower peak impact forces and less wasted energy each stride.',
+      generative: false,
+    },
+    kneeAtContact: {
+      noticed:
+        'Your knee appears relatively straight at the moment your foot lands in this recording.',
+      tryThis:
+        'Think "soft knees": let your knee stay slightly bent as your foot touches down, landing a little closer under your body.',
+      why: 'A softly bent knee at contact lets your leg act like a spring and absorb load more gradually.',
       generative: false,
     },
   }

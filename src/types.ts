@@ -24,7 +24,14 @@ export interface PoseSequence {
   confidence: number
 }
 
-export type MetricKey = 'posture' | 'footPlacement' | 'kneeMotion' | 'symmetry'
+export type MetricKey =
+  | 'posture'
+  | 'footPlacement'
+  | 'kneeMotion'
+  | 'symmetry'
+  | 'cadence'
+  | 'verticalOscillation'
+  | 'kneeAtContact'
 
 export interface MetricResult {
   key: MetricKey
@@ -110,4 +117,7 @@ export const METRIC_JOINTS: Record<MetricKey, number[]> = {
   footPlacement: [LM.leftHip, LM.rightHip, LM.leftAnkle, LM.rightAnkle, LM.leftFoot, LM.rightFoot],
   kneeMotion: [LM.leftHip, LM.rightHip, LM.leftKnee, LM.rightKnee, LM.leftAnkle, LM.rightAnkle],
   symmetry: [LM.leftKnee, LM.rightKnee, LM.leftAnkle, LM.rightAnkle],
+  cadence: [LM.leftAnkle, LM.rightAnkle, LM.leftFoot, LM.rightFoot],
+  verticalOscillation: [LM.leftHip, LM.rightHip],
+  kneeAtContact: [LM.leftHip, LM.rightHip, LM.leftKnee, LM.rightKnee, LM.leftAnkle, LM.rightAnkle],
 }

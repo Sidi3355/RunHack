@@ -46,6 +46,27 @@ function lowFootFrames(frames: PoseFrame[], ankle: number): PoseFrame[] {
   return frames.filter((f) => f.landmarks[ankle].y >= thresh)
 }
 
+/**
+ * Likely initial-contact frames per side: local maxima of ankle height-below-hip
+ * (y down → lowest foot), spaced at least `minGap` seconds apart.
+ * Approximate gait-event detection from monocular video — not force-plate truth.
+ */
+function contactFrames(frames: PoseFrame[], ankle: number, minGap = 0.22): PoseFrame[] {
+  const ys = frames.map((f) => f.landmarks[ankle].y)
+  const [thresh] = quantiles(ys, [0.7])
+  const out: PoseFrame[] = []
+  let lastT = -Infinity
+  for (let i = 1; i < frames.length - 1; i++) {
+    if (ys[i] >= thresh && ys[i] >= ys[i - 1] && ys[i] >= ys[i + 1]) {
+      if (frames[i].t - lastT >= minGap) {
+        out.push(frames[i])
+        lastT = frames[i].t
+      }
+    }
+  }
+  return out
+}
+
 function legLength(f: PoseFrame, hip: number, knee: number, ankle: number): number {
   const p = f.landmarks
   return (
@@ -200,13 +221,125 @@ export function analyseSequence(seq: PoseSequence): Analysis {
     values: { knee_range_lr_difference_pct: +(rangeDiff * 100).toFixed(0) },
   }
 
-  const metrics = [posture, footPlacement, kneeMotion, symmetry]
+  // ---- 5. Cadence (step rate)
+  // Higher step rate reduces loading rate / braking impulse (Schubert 2014, Adams 2018).
+  const lContacts = contactFrames(frames, LM.leftAnkle)
+  const rContacts = contactFrames(frames, LM.rightAnkle)
+  const totalContacts = lContacts.length + rContacts.length
+  const span = frames[frames.length - 1].t - frames[0].t
+  const stepsPerMin = span > 0.5 ? (totalContacts / span) * 60 : 0
+  const cadenceUnreliable = totalContacts < H.cadence.minContacts || span < 2
+  const cadenceDev =
+    stepsPerMin < H.cadence.idealMin
+      ? H.cadence.idealMin - stepsPerMin
+      : stepsPerMin > H.cadence.idealMax
+        ? stepsPerMin - H.cadence.idealMax
+        : 0
+  const cadence: MetricResult = cadenceUnreliable
+    ? {
+        key: 'cadence',
+        label: 'Cadence',
+        score: 65,
+        headline:
+          "We couldn't detect enough foot contacts to estimate your step rate — a slightly longer side-on clip helps.",
+        detail: 'Cadence needs a few clear strides with the feet visible.',
+        keyTime: frames[0].t,
+        values: { cadence_spm: -1 },
+        unreliable: true,
+      }
+    : {
+        key: 'cadence',
+        label: 'Cadence',
+        score: falloffScore(cadenceDev, H.cadence.falloff),
+        headline:
+          cadenceDev === 0
+            ? `Estimated step rate is ~${stepsPerMin.toFixed(0)} steps/min — in a commonly recommended range.`
+            : stepsPerMin < H.cadence.idealMin
+              ? `Your estimated step rate is ~${stepsPerMin.toFixed(0)} steps/min — on the lower side in this clip.`
+              : `Your estimated step rate is ~${stepsPerMin.toFixed(0)} steps/min — quite high in this clip.`,
+        detail: `Detected ${totalContacts} foot contacts over ${span.toFixed(1)}s. Research links quicker, shorter steps with lower joint loading.`,
+        keyTime: (lContacts[0] ?? rContacts[0] ?? frames[0]).t,
+        values: { cadence_spm: +stepsPerMin.toFixed(0) },
+      }
+
+  // ---- 6. Vertical oscillation (bounce)
+  // Large CoM vertical displacement ("bounding") is a video-analysis flag
+  // (Souza 2016) and predicts higher peak vGRF (Adams 2018).
+  const hipYs = frames.map((f) => mid(f, LM.leftHip, LM.rightHip).y)
+  const [hipLo, hipHi] = quantiles(hipYs, [0.05, 0.95])
+  const legPx = mean(frames.map((f) => legLength(f, LM.leftHip, LM.leftKnee, LM.leftAnkle)))
+  const oscRatio = legPx > 1e-4 ? (hipHi - hipLo) / legPx : 0
+  const oscDev = Math.max(0, oscRatio - H.verticalOscillation.ok)
+  const hiIdx = hipYs.indexOf(Math.max(...hipYs))
+  const verticalOscillation: MetricResult = {
+    key: 'verticalOscillation',
+    label: 'Bounce',
+    score: falloffScore(oscDev, H.verticalOscillation.falloff),
+    headline:
+      oscDev === 0
+        ? 'Your vertical bounce looks economical — energy is going forward, not up.'
+        : 'You appear to bounce vertically more than expected in this recording.',
+    detail: `Hip vertical movement is about ${(oscRatio * 100).toFixed(0)}% of leg length each stride.`,
+    keyTime: frames[hiIdx].t,
+    values: { vertical_oscillation_leg_ratio: +oscRatio.toFixed(2) },
+  }
+
+  // ---- 7. Knee flexion at initial contact
+  // Injured runners tend to land with a more extended knee (Bramah 2018).
+  const contactFlexions: { v: number; t: number }[] = []
+  for (const [contacts, hip, knee, ankle] of [
+    [lContacts, LM.leftHip, LM.leftKnee, LM.leftAnkle],
+    [rContacts, LM.rightHip, LM.rightKnee, LM.rightAnkle],
+  ] as [PoseFrame[], number, number, number][]) {
+    for (const f of contacts) contactFlexions.push({ v: 180 - angleAt(f, hip, knee, ankle), t: f.t })
+  }
+  const avgContactFlex = contactFlexions.length ? mean(contactFlexions.map((c) => c.v)) : 0
+  const flexDev = Math.max(0, H.kneeAtContact.okFlexion - avgContactFlex)
+  const stiffest = contactFlexions.length
+    ? contactFlexions.reduce((a, b) => (b.v < a.v ? b : a))
+    : { v: 0, t: frames[0].t }
+  const kneeAtContact: MetricResult = contactFlexions.length
+    ? {
+        key: 'kneeAtContact',
+        label: 'Landing knee',
+        score: falloffScore(flexDev, H.kneeAtContact.falloff),
+        headline:
+          flexDev === 0
+            ? `Your knee is comfortably bent (~${avgContactFlex.toFixed(0)}°) as your foot lands — good shock absorption.`
+            : `Your knee appears relatively straight (~${avgContactFlex.toFixed(0)}° bend) as your foot lands in this clip.`,
+        detail: `A softly bent knee at contact helps the leg absorb load; a very straight landing leg is a common flag in video gait analysis.`,
+        keyTime: stiffest.t,
+        values: { knee_flexion_at_contact_deg: +avgContactFlex.toFixed(0) },
+      }
+    : {
+        key: 'kneeAtContact',
+        label: 'Landing knee',
+        score: 65,
+        headline: "We couldn't isolate clear foot-contact moments to judge your landing knee.",
+        detail: 'This signal needs a few visible strides from the side.',
+        keyTime: frames[0].t,
+        values: { knee_flexion_at_contact_deg: -1 },
+        unreliable: true,
+      }
+
+  const metrics = [
+    posture,
+    footPlacement,
+    kneeMotion,
+    symmetry,
+    cadence,
+    verticalOscillation,
+    kneeAtContact,
+  ]
   const w = H.overallWeights
   const overallScore = Math.round(
     posture.score * w.posture +
       footPlacement.score * w.footPlacement +
       kneeMotion.score * w.kneeMotion +
-      symmetry.score * w.symmetry,
+      symmetry.score * w.symmetry +
+      cadence.score * w.cadence +
+      verticalOscillation.score * w.verticalOscillation +
+      kneeAtContact.score * w.kneeAtContact,
   )
   const reliable = metrics.filter((m) => !m.unreliable)
   const pool = reliable.length ? reliable : metrics
