@@ -71,8 +71,8 @@ export function personalTargets(p: Profile): PersonalTarget[] {
   })()
 
   const expectation = beginner
-    ? `As a ${levelWord}, being outside a band isn't alarming — the studies changed one thing at a time and used modest (~5%) adjustments.`
-    : `As a ${levelWord}, you should sit inside this band on most reliable clips; use the trend across sessions rather than one reading.`
+    ? `As ${exp === 'amateur' || exp === 'experienced' ? 'an' : 'a'} ${levelWord}, being outside a band isn't alarming — the studies changed one thing at a time and used modest (~5%) adjustments.`
+    : `As ${exp === 'amateur' || exp === 'experienced' ? 'an' : 'a'} ${levelWord}, you should sit inside this band on most reliable clips; use the trend across sessions rather than one reading.`
 
   return [
     {
