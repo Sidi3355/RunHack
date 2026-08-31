@@ -6,7 +6,7 @@ FormTwin turns a short side-on phone clip of you running into an explainable 3D
 movement twin — with the exact moments and joints behind every observation, and
 one concrete coaching cue.
 
-**Live demo:** https://dist-xvjybtwi.devinapps.com
+**Live demo:** https://formtwin.vercel.app
 
 ## How it works
 
