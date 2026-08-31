@@ -74,7 +74,9 @@ export default function Results({
 
       {isSample && (
         <div className="mb-4 rounded-2xl border border-sky bg-sky/30 px-4 py-2.5 text-sm text-moss">
-          Sample analysis — synthetic demo motion, not a real recording.
+          {videoUrl
+            ? 'Sample analysis — a real example clip run through the full pipeline. Upload your own run to see your results.'
+            : 'Sample analysis — synthetic demo motion, not a real recording.'}
         </div>
       )}
 

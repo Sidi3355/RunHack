@@ -41,7 +41,7 @@ export default function App() {
     })
   }, [])
 
-  const analyse = useCallback(async (file: File) => {
+  const analyse = useCallback(async (file: File, isSample = false) => {
     setScreen({ name: 'analyzing', progress: 0, stage: 'Loading pose model…' })
     try {
       const seq = await extractPoseSequence(file, (progress, stage) =>
@@ -51,10 +51,11 @@ export default function App() {
       if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current)
       const videoUrl = URL.createObjectURL(file)
       videoUrlRef.current = videoUrl
-      saveAnalysis(analysis)
+      if (!isSample) saveAnalysis(analysis)
       const coach = await getCoachAdvice(analysis).catch(() => templatedAdvice(analysis))
-      setScreen({ name: 'results', analysis, videoUrl, coach, isSample: false })
+      setScreen({ name: 'results', analysis, videoUrl, coach, isSample })
     } catch (e) {
+      if (isSample) throw e
       const raw = e instanceof Error ? e.message : ''
       const technical = !raw || /INVALID_ARGUMENT|CalculatorGraph|MediaPipe|wasm/i.test(raw)
       setScreen({
@@ -67,10 +68,20 @@ export default function App() {
   }, [])
 
   const showSample = useCallback(async () => {
-    const analysis = analyseSequence(sampleSequence())
-    const coach = await getCoachAdvice(analysis).catch(() => templatedAdvice(analysis))
-    setScreen({ name: 'results', analysis, videoUrl: null, coach, isSample: true })
-  }, [])
+    // Run the real pipeline on the bundled example clip; fall back to the
+    // synthetic sequence if the clip can't be fetched or analysed.
+    try {
+      setScreen({ name: 'analyzing', progress: 0, stage: 'Loading example clip…' })
+      const res = await fetch('/sample-run.mp4')
+      if (!res.ok) throw new Error(`sample clip ${res.status}`)
+      const blob = await res.blob()
+      await analyse(new File([blob], 'sample-run.mp4', { type: 'video/mp4' }), true)
+    } catch {
+      const analysis = analyseSequence(sampleSequence())
+      const coach = await getCoachAdvice(analysis).catch(() => templatedAdvice(analysis))
+      setScreen({ name: 'results', analysis, videoUrl: null, coach, isSample: true })
+    }
+  }, [analyse])
 
   const reset = useCallback(() => setScreen({ name: 'landing' }), [])
 
