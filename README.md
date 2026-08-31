@@ -78,6 +78,21 @@ serverless endpoint and set `OPENAI_API_KEY` (server-side only — never exposed
 to the browser). Without it, the app uses a clearly-labelled deterministic
 coaching fallback.
 
+## Deploying (Vercel, free)
+
+The repo deploys to Vercel's free Hobby tier with zero config — Vercel
+auto-detects the Vite framework preset (`npm run build`, output `dist/`) and
+picks up `api/coach.ts` as an Edge Function automatically.
+
+1. Go to <https://vercel.com/new> and sign in with GitHub.
+2. Import this repository and click **Deploy** (leave all settings at their
+   detected defaults).
+3. The site goes live at `https://<project-name>.vercel.app`. Every push to the
+   production branch redeploys automatically; other branches get preview URLs.
+4. *(Optional)* To enable live generative coaching, add an `OPENAI_API_KEY`
+   environment variable under **Project → Settings → Environment Variables**
+   and redeploy. Without it the app uses the deterministic coaching fallback.
+
 ## Disclaimer
 
 FormTwin is a prototype coaching tool and is not a medical device or a
