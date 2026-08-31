@@ -41,7 +41,7 @@ export default function App() {
     })
   }, [])
 
-  const analyse = useCallback(async (file: File, isSample = false) => {
+  const analyse = useCallback(async (file: File) => {
     setScreen({ name: 'analyzing', progress: 0, stage: 'Loading pose model…' })
     try {
       const seq = await extractPoseSequence(file, (progress, stage) =>
@@ -51,11 +51,10 @@ export default function App() {
       if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current)
       const videoUrl = URL.createObjectURL(file)
       videoUrlRef.current = videoUrl
-      if (!isSample) saveAnalysis(analysis)
+      saveAnalysis(analysis)
       const coach = await getCoachAdvice(analysis).catch(() => templatedAdvice(analysis))
-      setScreen({ name: 'results', analysis, videoUrl, coach, isSample })
+      setScreen({ name: 'results', analysis, videoUrl, coach, isSample: false })
     } catch (e) {
-      if (isSample) throw e
       const raw = e instanceof Error ? e.message : ''
       const technical = !raw || /INVALID_ARGUMENT|CalculatorGraph|MediaPipe|wasm/i.test(raw)
       setScreen({
@@ -68,20 +67,24 @@ export default function App() {
   }, [])
 
   const showSample = useCallback(async () => {
-    // Run the real pipeline on the bundled example clip; fall back to the
-    // synthetic sequence if the clip can't be fetched or analysed.
+    // The bundled example clip (public/sample-run.mp4) was analysed once with
+    // the real pipeline and the result shipped as static JSON, so the sample
+    // opens instantly for every visitor. Falls back to the synthetic sequence
+    // if the precomputed analysis can't be fetched.
     try {
-      setScreen({ name: 'analyzing', progress: 0, stage: 'Loading example clip…' })
-      const res = await fetch('/sample-run.mp4')
-      if (!res.ok) throw new Error(`sample clip ${res.status}`)
-      const blob = await res.blob()
-      await analyse(new File([blob], 'sample-run.mp4', { type: 'video/mp4' }), true)
+      const res = await fetch('/sample-analysis.json')
+      if (!res.ok) throw new Error(`sample analysis ${res.status}`)
+      const analysis = (await res.json()) as Analysis
+      if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current)
+      videoUrlRef.current = null
+      const coach = await getCoachAdvice(analysis).catch(() => templatedAdvice(analysis))
+      setScreen({ name: 'results', analysis, videoUrl: '/sample-run.mp4', coach, isSample: true })
     } catch {
       const analysis = analyseSequence(sampleSequence())
       const coach = await getCoachAdvice(analysis).catch(() => templatedAdvice(analysis))
       setScreen({ name: 'results', analysis, videoUrl: null, coach, isSample: true })
     }
-  }, [analyse])
+  }, [])
 
   const reset = useCallback(() => setScreen({ name: 'landing' }), [])
 

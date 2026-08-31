@@ -16,6 +16,20 @@
   --color-sky: #bfe0d6;
 }
 
+/* Tailwind's preflight leaves buttons on the default arrow cursor; restore
+   the clickable affordance. Kept in the base layer so utility classes
+   (e.g. cursor-zoom-in, cursor-default) still override it. */
+@layer base {
+  a,
+  label,
+  select,
+  summary,
+  [role='button'],
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
 html,
 body {
   background: var(--color-cream);
